@@ -181,6 +181,31 @@ static void ethernet_configure_interface(const unsigned char ipAddress[], const 
 	}
 }
 
+// This sets the IP configuration on-the-fly
+void ethernet_set_configuration(const unsigned char ipAddress[], const unsigned char netMask[], const unsigned char gateWay[])
+{
+	struct ip_addr x_ip_addr, x_net_mask, x_gateway;
+	IP4_ADDR(&x_ip_addr, ipAddress[0], ipAddress[1], ipAddress[2], ipAddress[3]);
+	IP4_ADDR(&x_net_mask, netMask[0], netMask[1], netMask[2], netMask[3]);
+	IP4_ADDR(&x_gateway, gateWay[0], gateWay[1], gateWay[2], gateWay[3]);
+
+	if (gs_net_if.ip_addr.addr == 0)
+	{
+		dhcp_stop(&gs_net_if);
+	}
+
+	if (x_ip_addr.addr == 0)
+	{
+		dhcp_start(&gs_net_if);
+	}
+	else
+	{
+		netif_set_ipaddr(&gs_net_if, &x_ip_addr);
+		netif_set_netmask(&gs_net_if, &x_net_mask);
+		netif_set_gw(&gs_net_if, &x_gateway);
+	}
+}
+
 /** \brief Initialize the Ethernet subsystem.
  *
  */

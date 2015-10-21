@@ -61,6 +61,8 @@ class Roland
 		bool Busy();
 
 		Platform* platform;
+		float longWait;
+
 		float move[DRIVES+1];
 		float coordinates[AXES+1];
 		float oldCoordinates[AXES+1];

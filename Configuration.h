@@ -24,8 +24,8 @@ Licence: GPL
 #define CONFIGURATION_H
 
 #define NAME "RepRapFirmware"
-#define VERSION "1.09j-ch"
-#define DATE "2015-10-15"
+#define VERSION "1.09k-ch"
+#define DATE "2015-10-21"
 
 #define AUTHORS "reprappro, dc42, chrishamm, t3p3, dnewman"
 
@@ -104,13 +104,10 @@ static const size_t OUTPUT_BUFFER_COUNT = 16;				// How many OutputBuffer instan
 static const float DEFAULT_FEEDRATE = 3000.0;				// The initial requested feed rate after resetting the printer
 static const float DEFAULT_IDLE_TIMEOUT = 30.0;				// Seconds
 
-// Print estimation defaults
+// Default nozzle and filament values
 
 static const float NOZZLE_DIAMETER = 0.5;					// Millimetres
 static const float FILAMENT_WIDTH = 1.75;					// Millimetres
-static const size_t MAX_LAYER_SAMPLES = 5;					// Number of layer samples for end-time estimation (except for first layer)
-static const float ESTIMATION_MIN_FILAMENT_USAGE = 0.025;	// Minimum per cent after which the first layer height is determined
-static const float FIRST_LAYER_SPEED_FACTOR = 0.25;			// First layer speed factor compared to other layers (only for layer-based estimation)
 
 // Webserver defaults
 

@@ -101,6 +101,7 @@ class NetworkTransaction
 		uint16_t GetLocalPort() const;
 
 		void Commit(bool keepConnectionAlive);
+		void Defer();
 		void Discard();
 
 	private:
@@ -141,6 +142,8 @@ class Network
 		void WaitForDataConection();
 
 		uint8_t *IPAddress() const;
+		void SetIPAddress(const unsigned char ipAddress[], const unsigned char netmask[],
+				const unsigned char gateway[]);
 		void OpenDataPort(uint16_t port);
 		uint16_t GetDataPort() const;
 		void CloseDataPort();
@@ -197,6 +200,9 @@ class Network
 
 		ConnectionState * volatile freeConnections;		// May be referenced by Ethernet ISR, hence it's volatile
 };
+
+
+inline void NetworkTransaction::Defer() { FreePbuf(); }	// Sends ACK to avoid TCP retransmissions
 
 #endif
 

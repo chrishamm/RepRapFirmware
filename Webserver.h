@@ -45,7 +45,7 @@ const size_t maxQualKeys = 5;					// max number of key/value pairs in the qualif
 const size_t maxHeaders = 16;					// max number of key/value pairs in the headers
 
 const size_t  maxSessions = 8;					// maximum number of simultaneous HTTP sessions
-const float httpSessionTimeout = 30.0;			// HTTP session timeout in seconds
+const float httpSessionTimeout = 8.0;			// HTTP session timeout in seconds
 
 /* FTP */
 
@@ -162,6 +162,8 @@ class Webserver
 				uint16_t GetGCodeBufferSpace() const;
 				uint32_t GetReplySeq() const;
 
+				bool CheckDeferredRequest();					// used for deferred requests. HTTP request is only parsed if this returns true
+
 			private:
 
 				// HTTP server state enumeration. The order is important, in particular xxxEsc1 must follow xxx, and xxxEsc2 must follow xxxEsc1.
@@ -247,6 +249,7 @@ class Webserver
 
 			protected:
 
+				bool processingDeferredRequest;					// it's no good idea to parse 128kB of text in one go...
 				bool uploadingTextData;							// do we need to count UTF-8 continuation bytes?
 				uint32_t numContinuationBytes;					// number of UTF-8 continuation bytes we have received
 
@@ -283,6 +286,7 @@ class Webserver
 					doingPasvIO				// client is connected and data is being transferred
 				};
 				FtpState state;
+				uint8_t connectedClients;
 
 				char clientMessage[ftpMessageLength];
 				unsigned int clientPointer;

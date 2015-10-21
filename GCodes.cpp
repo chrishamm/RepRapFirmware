@@ -3222,15 +3222,16 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 		case 36: // Return file information
 			{
 				const char* filename = gb->GetUnprecedentedString(true);	// get filename, or nullptr if none provided
-				OutputBuffer *fileInfoResponse = reprap.GetPrintMonitor()->GetFileInfoResponse(filename);
-				if (fileInfoResponse != nullptr)
+				OutputBuffer *fileInfoResponse;
+				result = reprap.GetPrintMonitor()->GetFileInfoResponse(filename, fileInfoResponse);
+				if (result)
 				{
 					fileInfoResponse->cat('\n');
 					HandleReply(gb, false, fileInfoResponse);
 					return true;
 				}
 			}
-			return false;
+			break;
 
 		case 37: // Simulation mode on/off
 			if (gb->Seen('S'))
@@ -3324,6 +3325,11 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 
 		case 92: // Set/report steps/mm for some axes
 			{
+				// Save the current positions as we may need them later
+				float positionNow[DRIVES];
+				Move *move = reprap.GetMove();
+				move->GetCurrentUserPosition(positionNow, 0);
+
 				bool seen = false;
 				for(size_t axis = 0; axis < AXES; axis++)
 				{
@@ -3346,7 +3352,12 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 					}
 				}
 
-				if(!seen)
+				if (seen)
+				{
+					// On a delta, if we change the drive steps/mm then we need to recalculate the motor positions
+					SetPositions(positionNow);
+				}
+				else
 				{
 					reply.printf("Steps/mm: X: %.3f, Y: %.3f, Z: %.3f, E: ",
 							platform->DriveStepsPerUnit(X_AXIS), platform->DriveStepsPerUnit(Y_AXIS),
@@ -4356,7 +4367,7 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			else
 			{
 				const byte *nm = platform->NetMask();
-				reply.printf("Net mask: %d.%d.%d.%d\n ", nm[0], nm[1], nm[2], nm[3]);
+				reply.printf("Net mask: %d.%d.%d.%d\n", nm[0], nm[1], nm[2], nm[3]);
 			}
 			break;
 
@@ -4368,7 +4379,7 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			else
 			{
 				const byte *gw = platform->GateWay();
-				reply.printf("Gateway: %d.%d.%d.%d\n ", gw[0], gw[1], gw[2], gw[3]);
+				reply.printf("Gateway: %d.%d.%d.%d\n", gw[0], gw[1], gw[2], gw[3]);
 			}
 			break;
 

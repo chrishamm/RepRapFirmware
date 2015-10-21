@@ -730,7 +730,7 @@ void Platform::SetEmulating(Compatibility c)
 void Platform::UpdateNetworkAddress(byte dst[4], const byte src[4])
 {
 	bool changed = false;
-	for (uint8_t i = 0; i < 4; i++)
+	for (size_t i = 0; i < 4; i++)
 	{
 		if (dst[i] != src[i])
 		{
@@ -738,9 +738,14 @@ void Platform::UpdateNetworkAddress(byte dst[4], const byte src[4])
 			changed = true;
 		}
 	}
-	if (changed && autoSaveEnabled)
+
+	if (changed)
 	{
-		WriteNvData();
+		if (autoSaveEnabled)
+		{
+			WriteNvData();
+		}
+		reprap.GetNetwork()->SetIPAddress(nvData.ipAddress, nvData.netMask, nvData.gateWay);
 	}
 }
 
@@ -1835,7 +1840,7 @@ bool Platform::Inkjet(int bitPattern)
 
  */
 
-MassStorage::MassStorage(Platform* p) : platform(p), combinedName(combinedNameBuffer, ARRAY_SIZE(combinedNameBuffer))
+MassStorage::MassStorage(Platform* p) : platform(p)
 {
 	memset(&fileSystem, 0, sizeof(FATFS));
 	findDir = new DIR();
@@ -1945,7 +1950,7 @@ const char* MassStorage::CombineName(const char* directory, const char* fileName
 			combinedName[out] = directory[in];
 			in++;
 			out++;
-			if (out >= combinedName.Length())
+			if (out >= ARRAY_SIZE(combinedName))
 			{
 				platform->Message(GENERIC_MESSAGE, "Error: CombineName() buffer overflow.\n");
 				out = 0;
@@ -1953,7 +1958,7 @@ const char* MassStorage::CombineName(const char* directory, const char* fileName
 		}
 	}
 
-	if (in > 0 && directory[in - 1] != '/' && out < combinedName.Length() - 1)
+	if (in > 0 && directory[in - 1] != '/' && out < ARRAY_UPB(combinedName))
 	{
 		combinedName[out] = '/';
 		out++;
@@ -1965,7 +1970,7 @@ const char* MassStorage::CombineName(const char* directory, const char* fileName
 		combinedName[out] = fileName[in];
 		in++;
 		out++;
-		if (out >= combinedName.Length())
+		if (out >= ARRAY_SIZE(combinedName))
 		{
 			platform->Message(GENERIC_MESSAGE, "Error: CombineName() buffer overflow.\n");
 			out = 0;
@@ -1973,7 +1978,7 @@ const char* MassStorage::CombineName(const char* directory, const char* fileName
 	}
 	combinedName[out] = 0;
 
-	return combinedName.Pointer();
+	return combinedName;
 }
 
 // Open a directory to read a file list. Returns true if it contains any files, false otherwise.
@@ -2341,15 +2346,16 @@ int FileStore::Read(char* extBuf, unsigned int nBytes)
 		return -1;
 	}
 
-	size_t bytesRead;
-	FRESULT readStatus = f_read(&file, extBuf, nBytes, &bytesRead);
+	size_t numBytesRead;
+	FRESULT readStatus = f_read(&file, extBuf, nBytes, &numBytesRead);
 	if (readStatus)
 	{
 		platform->Message(GENERIC_MESSAGE, "Error: Cannot read file.\n");
 		return -1;
 	}
+	bytesRead += numBytesRead;
 
-	return bytesRead;
+	return numBytesRead;
 }
 
 bool FileStore::WriteBuffer()

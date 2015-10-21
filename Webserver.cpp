@@ -206,8 +206,8 @@ void Webserver::Spin()
 					telnetInterpreter->SendGCodeReply(transaction);
 					transaction->Commit(true);
 				}
-				// Process other messages
-				else
+				// Process other messages (unless this is an HTTP request which may need special treatement)
+				else if (interpreter != httpInterpreter || httpInterpreter->CheckDeferredRequest())
 				{
 					for(size_t i = 0; i < 500; i++)
 					{
@@ -498,6 +498,7 @@ Webserver::HttpInterpreter::HttpInterpreter(Platform *p, Webserver *ws, Network 
 	gcodeReadIndex = gcodeWriteIndex = 0;
 	gcodeReply = nullptr;
 	uploadingTextData = false;
+	processingDeferredRequest = false;
 	numContinuationBytes = seq = 0;
 }
 
@@ -762,6 +763,14 @@ void Webserver::HttpInterpreter::SendJsonResponse(const char* command)
 		found = GetJsonResponse(command, jsonResponse, qualifiers[0].key, qualifiers[0].value, qualifiers[1].key - qualifiers[0].value - 1, mayKeepOpen);
 	}
 
+	// Check the special case of a deferred request
+	if (processingDeferredRequest)
+	{
+		reprap.ReleaseOutput(jsonResponse);
+		return;
+	}
+
+	// React to whether or not a JSON response could be found
 	if (!found)
 	{
 		if (!IsAuthenticated())
@@ -797,6 +806,16 @@ void Webserver::HttpInterpreter::SendJsonResponse(const char* command)
 	transaction->Write(jsonResponse);
 
 	transaction->Commit(keepOpen);
+}
+
+bool Webserver::HttpInterpreter::CheckDeferredRequest()
+{
+	if (processingDeferredRequest)
+	{
+		ProcessMessage();
+		return false;
+	}
+	return true;
 }
 
 //----------------------------------------------------------------------------------------------------
@@ -935,8 +954,17 @@ bool Webserver::HttpInterpreter::GetJsonResponse(const char* request, OutputBuff
 		}
 		else if (StringEquals(request, "fileinfo"))
 		{
-			reprap.ReplaceOutput(response,
-					reprap.GetPrintMonitor()->GetFileInfoResponse((StringEquals(key, "name")) ? value : nullptr));
+			OutputBuffer *buffer;
+			if (reprap.GetPrintMonitor()->GetFileInfoResponse(StringEquals(key, "name") ? value : nullptr, buffer))
+			{
+				reprap.ReplaceOutput(response, buffer);
+				processingDeferredRequest = false;
+			}
+			else
+			{
+				network->GetTransaction()->Defer();
+				processingDeferredRequest = true;
+			}
 		}
 		else if (StringEquals(request, "move"))
 		{
@@ -1247,7 +1275,6 @@ bool Webserver::HttpInterpreter::CharFromClient(char c)
 					{
 						if (ProcessMessage())
 						{
-							ResetState();
 							return true;
 						}
 					}
@@ -1307,7 +1334,6 @@ bool Webserver::HttpInterpreter::CharFromClient(char c)
 					clientMessage[clientPointer] = 0;
 					if (ProcessMessage())
 					{
-						ResetState();
 						return true;
 					}
 					// no break
@@ -1403,6 +1429,11 @@ bool Webserver::HttpInterpreter::ProcessMessage()
 		else
 		{
 			SendFile(commandWords[1]);
+		}
+
+		if (!processingDeferredRequest)
+		{
+			ResetState();
 		}
 		return true;
 	}
@@ -1573,6 +1604,12 @@ void Webserver::HttpInterpreter::CheckSessions()
 			numActiveSessions--;
 		}
 	}
+
+	if (numActiveSessions == 0 && gcodeReply != nullptr)
+	{
+		// Don't save up buffers if we can't be sure to send them at all
+		reprap.ReleaseOutput(gcodeReply);
+	}
 }
 
 // Process a received string of gcodes
@@ -1742,11 +1779,13 @@ void Webserver::HttpInterpreter::HandleGCodeReply(const char *reply)
 Webserver::FtpInterpreter::FtpInterpreter(Platform *p, Webserver *ws, Network *n)
 	: ProtocolInterpreter(p, ws, n), state(authenticating), clientPointer(0)
 {
+	connectedClients = 0;
 	strcpy(currentDir, "/");
 }
 
 void Webserver::FtpInterpreter::ConnectionEstablished()
 {
+	connectedClients++;
 	if (reprap.Debug(moduleWebserver))
 	{
 		platform->Message(HOST_MESSAGE, "Webserver: FTP connection established!\n");
@@ -1788,6 +1827,8 @@ void Webserver::FtpInterpreter::ConnectionEstablished()
 
 void Webserver::FtpInterpreter::ConnectionLost(uint32_t remoteIP, uint16_t remotePort, uint16_t localPort)
 {
+	connectedClients--;
+
 	if (localPort != FTP_PORT)
 	{
 		// Close the data port
@@ -1820,6 +1861,11 @@ void Webserver::FtpInterpreter::ConnectionLost(uint32_t remoteIP, uint16_t remot
 			uploadState = notUploading;
 		}
 		state = authenticated;
+	}
+	else if (connectedClients == 0)
+	{
+		// Last one gone now...
+		ResetState();
 	}
 }
 
@@ -2479,6 +2525,12 @@ void Webserver::TelnetInterpreter::ConnectionLost(uint32_t remoteIP, uint16_t re
 	if (connectedClients == 0)
 	{
 		ResetState();
+
+		if (gcodeReply != nullptr)
+		{
+			// Don't save up output buffers if they can't be sent
+			reprap.ReleaseOutput(gcodeReply);
+		}
 	}
 }
 

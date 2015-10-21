@@ -319,11 +319,8 @@ class MassStorage
 
 		Platform* platform;
 		FATFS fileSystem;
-
 		DIR *findDir;
-
-		char combinedNameBuffer[FILENAME_LENGTH];
-		StringRef combinedName;
+		char combinedName[FILENAME_LENGTH];
 };
 
 // This class handles input from, and output to, files.

@@ -726,6 +726,16 @@ uint8_t *Network::IPAddress() const
 	return reinterpret_cast<uint8_t*>(&ethernet_get_configuration()->ip_addr.addr);
 }
 
+void Network::SetIPAddress(const unsigned char ipAddress[], const unsigned char netmask[],
+		const unsigned char gateway[])
+{
+	if (state == NetworkActive)
+	{
+		// This performs IP changes on-the-fly
+		ethernet_set_configuration(ipAddress, netmask, gateway);
+	}
+}
+
 void Network::OpenDataPort(uint16_t port)
 {
 	closingDataPort = false;

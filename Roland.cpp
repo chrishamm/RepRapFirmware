@@ -16,17 +16,23 @@ void Roland::Init()
 	pinMode(ROLAND_CTS_PIN, INPUT);
 	digitalWrite(ROLAND_RTS_PIN, HIGH);
 	Serial1.begin(ROLAND_BAUD); //For serial comms to mill
+
 	sBuffer = new StringRef(buffer, ARRAY_SIZE(buffer));
 	sBuffer->Clear();
+
 	bufferPointer = 0;
 	Zero(true);
+	longWait = platform->Time();
 	active = false;
 }
 
 void Roland::Spin()
 {
-	if(!Active())
+	if (!Active())
+	{
+		platform->ClassReport(longWait);
 		return;
+	}
 
 	// 'U' is 01010101 in binary (nice for an oscilloscope...)
 
@@ -36,10 +42,13 @@ void Roland::Spin()
 
 	// Are we sending something to the Roland?
 
-	if(Busy())	// Busy means we are sending something
+	if (Busy())	// Busy means we are sending something
 	{
-		if(digitalRead(ROLAND_CTS_PIN))
+		if (digitalRead(ROLAND_CTS_PIN))
+		{
+			platform->ClassReport(longWait);
 			return;
+		}
 
 		Serial1.write(buffer[bufferPointer]);
 		Serial1.flush();
@@ -63,12 +72,13 @@ void Roland::Spin()
 			ProcessMove();
 		}
 	}
+
+	platform->ClassReport(longWait);
 }
 
 void Roland::Zero(bool feed)
 {
-	size_t lim = AXES;
-	if(feed) lim++;
+	size_t lim = feed ? AXES + 1 : AXES;
 	for(size_t axis = 0; axis < lim; axis++)
 	{
 		move[axis] = 0.0;
@@ -90,8 +100,10 @@ bool Roland::Busy()
 
 bool Roland::ProcessHome()
 {
-	if(Busy())
+	if (Busy())
+	{
 		return false;
+	}
 
 	sBuffer->printf("H;\n"); 
 	Zero(false);
@@ -104,8 +116,10 @@ bool Roland::ProcessHome()
 
 bool Roland::ProcessDwell(long milliseconds)
 {
-	if(Busy())
+	if (Busy())
+	{
 		return false;
+	}
 
 	sBuffer->printf("W%ld;", milliseconds);
 	sBuffer->catf("Z %.4f,%.4f,%.4f;", oldCoordinates[0], oldCoordinates[1], oldCoordinates[2]);
@@ -119,8 +133,10 @@ bool Roland::ProcessDwell(long milliseconds)
 
 bool Roland::ProcessG92(float v, size_t axis)
 {
-	if(Busy())
+	if (Busy())
+	{
 		return false;
+	}
 
 	move[axis] = v;
 	coordinates[axis] = move[axis]*ROLAND_FACTOR + offset[axis];
@@ -135,10 +151,12 @@ bool Roland::ProcessG92(float v, size_t axis)
 
 bool Roland::ProcessSpindle(float rpm)
 {
-	if(Busy())
+	if (Busy())
+	{
 		return false;
+	}
 
-	if(rpm < 0.5)	// Stop
+	if (rpm < 0.5)	// Stop
 	{
 		sBuffer->printf("!MC 0;\n");
 	}
@@ -200,8 +218,10 @@ void Roland::ProcessMove()
 
 bool Roland::RawWrite(const char* s)
 {
-	if(Busy())
+	if (Busy())
+	{
 		return false;
+	}
 
 	sBuffer->copy(s);
 	sBuffer->catf("\n");
@@ -231,8 +251,10 @@ void Roland::Activate()
 
 bool Roland::Deactivate()
 {
-	if(Busy())
+	if (Busy())
+	{
 		return false;
+	}
 
 	digitalWrite(ROLAND_RTS_PIN, HIGH);
 	active = false;
@@ -240,7 +262,6 @@ bool Roland::Deactivate()
 	{
 		platform->Message(HOST_MESSAGE, "Roland stopped\n");
 	}
-
 	return true;
 }
 

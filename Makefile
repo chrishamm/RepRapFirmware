@@ -28,31 +28,31 @@ DUET_PORT := /dev/ttyACM0
 # Determine Arduino path
 UNAME := $(shell uname -s)
 ifeq ($(UNAME),Linux)
-	ARDUINO_PATH := $(HOME)/.arduino15
+  ARDUINO_PATH := $(HOME)/.arduino15
 endif
 ifeq ($(UNAME),Darwin)
-	ARDUINO_PATH := $(HOME)/Library/Arduino15
+  ARDUINO_PATH := $(HOME)/Library/Arduino15
 endif
 ifeq (,$(wildcard $(ARDUINO_PATH)/.))
-	$(error Arduino directory not found! Are you using Arduino $(ARDUINO_VERSION)?)
+  $(error Arduino directory not found! Are you using Arduino $(ARDUINO_VERSION)?)
 endif
 
 # Detect Duet board path
 DUET_BOARD_PATH := $(ARDUINO_PATH)/packages/RepRap/hardware/sam/$(DUET_BOARD_VERSION)
 ifeq (,$(wildcard $(DUET_BOARD_PATH)/.))
-	$(error Duet board not found! Install it first via Arduino''s Boards Manager.)
+  $(error Duet board not found! Install it first via Arduino''s Boards Manager.)
 endif
 
 # Detect GCC path
 GCC_PATH := $(ARDUINO_PATH)/packages/arduino/tools/arm-none-eabi-gcc/$(GCC_VERSION)
 ifeq (,$(wildcard $(GCC_PATH)/.))
-	$(error GCC toolchain not found! Check your installation.)
+  $(error GCC toolchain not found! Check your installation.)
 endif
 
 # Detect bossac path
 BOSSAC_PATH := $(ARDUINO_PATH)/packages/arduino/tools/bossac/$(BOSSAC_VERSION)/bossac
 ifeq (,$(wildcard $(BOSSAC_PATH)))
-	$(warning Bossac not found! Uploading compiled binaries will not work.)
+  $(warning Bossac not found! Uploading compiled binaries will not work.)
 endif
 
 

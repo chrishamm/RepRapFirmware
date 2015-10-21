@@ -153,7 +153,7 @@ void Move::Spin()
 			prevMoveTime = dda->CalcTime();
 		}
 
-		if (unPreparedTime < 0.5 || unPreparedTime + prevMoveTime < 2.0)
+		if ((!reprap.GetRoland()->Active()) && (unPreparedTime < 0.5 || unPreparedTime + prevMoveTime < 2.0))
 		{
 			// If there's a G Code move available, add it to the DDA ring for processing.
 			float nextMove[DRIVES + 1];
@@ -678,17 +678,17 @@ void Move::SetAxisCompensation(int8_t axis, float tangent)
 {
 	switch(axis)
 	{
-	case X_AXIS:
-		tanXY = tangent;
-		break;
-	case Y_AXIS:
-		tanYZ = tangent;
-		break;
-	case Z_AXIS:
-		tanXZ = tangent;
-		break;
-	default:
-		reprap.GetPlatform()->Message(GENERIC_MESSAGE, "Error: SetAxisCompensation: dud axis.\n");
+		case X_AXIS:
+			tanXY = tangent;
+			break;
+		case Y_AXIS:
+			tanYZ = tangent;
+			break;
+		case Z_AXIS:
+			tanXZ = tangent;
+			break;
+		default:
+			reprap.GetPlatform()->Message(GENERIC_MESSAGE, "Error: SetAxisCompensation: dud axis.\n");
 	}
 }
 
