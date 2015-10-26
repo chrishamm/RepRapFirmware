@@ -91,13 +91,13 @@ extern void digitalWrite(uint32_t ulPin, uint32_t ulVal)
 		return ;
 	}
 
-	if (ulVal)		// we make use of the fact that LOW is zero and HIGH is nonzero
+	if ( PIO_GetOutputDataStatus( g_APinDescription[ulPin].pPort, g_APinDescription[ulPin].ulPin ) == 0 )
 	{
-		g_APinDescription[ulPin].pPort->PIO_SODR = g_APinDescription[ulPin].ulPin;
+		PIO_PullUp( g_APinDescription[ulPin].pPort, g_APinDescription[ulPin].ulPin, ulVal ) ;
 	}
 	else
 	{
-		g_APinDescription[ulPin].pPort->PIO_CODR = g_APinDescription[ulPin].ulPin;
+		PIO_SetOutput( g_APinDescription[ulPin].pPort, g_APinDescription[ulPin].ulPin, ulVal, 0, PIO_PULLUP ) ;
 	}
 }
 

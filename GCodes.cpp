@@ -1453,13 +1453,13 @@ bool GCodes::SetPrintZProbe(GCodeBuffer* gb, StringRef& reply)
 		switch (platform->GetZProbeSecondaryValues(v1, v2))
 		{
 			case 1:
-				reply.printf("%d (%d)", v0, v1);
+				reply.printf("%d (%d)\n", v0, v1);
 				break;
 			case 2:
-				reply.printf("%d (%d, %d)", v0, v1, v2);
+				reply.printf("%d (%d, %d)\n", v0, v1, v2);
 				break;
 			default:
-				reply.printf("%d", v0);
+				reply.printf("%d\n", v0);
 				break;
 		}
 	}

@@ -12,15 +12,15 @@
         {
           "name": "Duet platform",
           "architecture": "sam",
-          "version": "1.0.4",
+          "version": "1.0.5",
           "category": "RepRap",
           "help": {
             "online": "https://github.com/chrishamm/RepRapFirmware/tree/dev/Hardware"
           },
           "url": "https://github.com/chrishamm/RepRapFirmware/raw/dev/Hardware/Duet-1.0.4.zip",
-          "archiveFileName": "Duet-1.0.4.zip",
-          "checksum": "SHA-256:6e4c4fefcdedd0e9643193c5cc84e2c1614a442e8c371e2b8bb597d2fa79c53e",
-          "size": "17332075",
+          "archiveFileName": "Duet-1.0.5.zip",
+          "checksum": "SHA-256:8f758baf4d8c8349b164ffdb57fb125817344e6b26196ecc006f40b2351564e9",
+          "size": "17333733",
           "boards": [
             {"name": "Duet"}
           ],

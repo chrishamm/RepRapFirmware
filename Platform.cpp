@@ -291,7 +291,7 @@ void Platform::Init()
 	}
 	if (coolingFanRpmPin >= 0)
 	{
-		pinModeDuet(coolingFanRpmPin, INPUT_PULLUP, 1500);
+		pinModeDuet(coolingFanRpmPin, INPUT_PULLUP, 1500); // enable pullup and 1500Hz debounce filter (500Hz only worked up to 7000RPM)
 	}
 
 	// Hotend configuration
@@ -373,7 +373,7 @@ void Platform::InitZProbe()
 {
 	zProbeOnFilter.Init(0);
 	zProbeOffFilter.Init(0);
-	zProbeModulationPin = (board == BoardType::Duet_07) ? Z_PROBE_MOD_PIN07 : Z_PROBE_MOD_PIN;
+	zProbeModulationPin = (board == BoardType::Duet_07 || board == BoardType::Duet_085) ? Z_PROBE_MOD_PIN07 : Z_PROBE_MOD_PIN;
 
 	if (nvData.zProbeType >= 1 && nvData.zProbeType <= 3)
 	{
@@ -417,7 +417,7 @@ int Platform::ZProbe() const
 				return (int) ((zProbeOnFilter.GetSum() + zProbeOffFilter.GetSum()) / (8 * Z_PROBE_AVERAGE_READINGS));
 
 			case 2:
-				// Modulated IR sensor. We assume that zProbeOnFilter and zprobeOffFilter average the same number of readings.
+				// Modulated IR sensor. We assume that zProbeOnFilter and zProbeOffFilter average the same number of readings.
 				// Because of noise, it is possible to get a negative reading, so allow for this.
 				return (int) (((int32_t) zProbeOnFilter.GetSum() - (int32_t) zProbeOffFilter.GetSum())
 						/ (int)(4 * Z_PROBE_AVERAGE_READINGS));
@@ -454,7 +454,7 @@ int Platform::GetZProbeType() const
 
 void Platform::SetZProbeAxes(const bool axes[AXES])
 {
-	for(size_t axis=0; axis<AXES; axis++)
+	for(size_t axis = 0; axis < AXES; axis++)
 	{
 		nvData.zProbeAxes[axis] = axes[axis];
 	}
@@ -467,7 +467,7 @@ void Platform::SetZProbeAxes(const bool axes[AXES])
 
 void Platform::GetZProbeAxes(bool (&axes)[AXES])
 {
-	for(size_t axis=0; axis<AXES; axis++)
+	for(size_t axis = 0; axis < AXES; axis++)
 	{
 		axes[axis] = nvData.zProbeAxes[axis];
 	}
@@ -941,7 +941,7 @@ void Platform::InitialiseInterrupts()
 	tickState = 0;
 	currentHeater = 0;
 
-	active = true;							// this enables the tick interrupt, which keeps the watchdog happy
+	active = true;
 }
 
 //*************************************************************************************************

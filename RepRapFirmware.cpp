@@ -183,7 +183,7 @@ RepRap::RepRap() : lastToolWarningTime(0.0), ticksInSpinState(0), spinningModule
 	toolList = nullptr;
 
 	freeOutputBuffers = nullptr;
-	for(size_t i=0; i<OUTPUT_BUFFER_COUNT; i++)
+	for(size_t i = 0; i < OUTPUT_BUFFER_COUNT; i++)
 	{
 		freeOutputBuffers = new OutputBuffer(freeOutputBuffers);
 	}

@@ -105,7 +105,7 @@ bool Roland::ProcessHome()
 		return false;
 	}
 
-	sBuffer->printf("H;\n"); 
+	sBuffer->copy("H;\n");
 	Zero(false);
 	if (reprap.Debug(moduleGcodes))
 	{
@@ -123,7 +123,7 @@ bool Roland::ProcessDwell(long milliseconds)
 
 	sBuffer->printf("W%ld;", milliseconds);
 	sBuffer->catf("Z %.4f,%.4f,%.4f;", oldCoordinates[0], oldCoordinates[1], oldCoordinates[2]);
-	sBuffer->catf("W0;\n");
+	sBuffer->cat("W0;\n");
 	if (reprap.Debug(moduleGcodes))
 	{
 		platform->MessageF(HOST_MESSAGE, "Roland dwell: %s", buffer);
@@ -224,7 +224,7 @@ bool Roland::RawWrite(const char* s)
 	}
 
 	sBuffer->copy(s);
-	sBuffer->catf("\n");
+	sBuffer->cat("\n");
 
 	if (reprap.Debug(moduleGcodes))
 	{

@@ -203,11 +203,11 @@ static const unsigned int AD_DISCONNECTED_VIRTUAL = AD_DISCONNECTED_REAL << AD_O
 
 // Z PROBE
 
-static const int Z_PROBE_AD_VALUE = 400;						// Default for the Z proboe - should be overwritten by experiment
+static const int Z_PROBE_AD_VALUE = 400;						// Default for the Z probe - should be overwritten by experiment
 static const float Z_PROBE_STOP_HEIGHT = 0.7;					// Millimetres
 static const int8_t Z_PROBE_PIN = 10;							// Analogue pin number
-static const int8_t Z_PROBE_MOD_PIN = 52;						// Digital pin number to turn the IR LED on (high) or off (low)
-static const int8_t Z_PROBE_MOD_PIN07 = X12;					// Digital pin number to turn the IR LED on (high) or off (low) on Duet v0.7 onwards
+static const int8_t Z_PROBE_MOD_PIN = 52;						// Digital pin number to turn the IR LED on (high) or off (low) on Duet v0.6 and v1.0 (PB21)
+static const int8_t Z_PROBE_MOD_PIN07 = X12;					// Digital pin number to turn the IR LED on (high) or off (low) on Duet v0.7 and v0.8.5 (PC10)
 static const bool Z_PROBE_AXES[AXES] = { true, false, true };	// Axes for which the Z-probe is normally used
 static const unsigned int Z_PROBE_AVERAGE_READINGS = 8;			// We average this number of readings with IR on, and the same number with IR off
 
