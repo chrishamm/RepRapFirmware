@@ -12,8 +12,10 @@ To include this hardware tree, open the Arduino IDE.  Open the Boards Manager an
 go to File -> Preferences and set "Additional Boards Manager URLs" to:
 
   https://github.com/chrishamm/RepRapFirmware/raw/dev/Hardware/package_reprap_index.json
-  
-Then open the Boards Manager and install the Duet device tree.
+
+NOTE: As of Arduino 1.6.5, there is a bug that prevents the proper installation of this device tree. However, as a
+work-around, you can install the "Arduino SAM" package first. Once you have done this, open the "Boards Manager" and
+install the Duet device tree in the same way.
 
 
 All of these files are licensed under the terms and conditions of the GPL.
