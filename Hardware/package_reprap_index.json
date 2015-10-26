@@ -17,7 +17,7 @@
           "help": {
             "online": "https://github.com/chrishamm/RepRapFirmware/tree/dev/Hardware"
           },
-          "url": "https://github.com/chrishamm/RepRapFirmware/raw/dev/Hardware/Duet-1.0.4.zip",
+          "url": "https://github.com/chrishamm/RepRapFirmware/raw/dev/Hardware/Duet-1.0.5.zip",
           "archiveFileName": "Duet-1.0.5.zip",
           "checksum": "SHA-256:8f758baf4d8c8349b164ffdb57fb125817344e6b26196ecc006f40b2351564e9",
           "size": "17333733",
