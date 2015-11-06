@@ -13,9 +13,9 @@ go to File -> Preferences and set "Additional Boards Manager URLs" to:
 
   https://github.com/chrishamm/RepRapFirmware/raw/dev/Hardware/package_reprap_index.json
 
-NOTE: As of Arduino 1.6.5, there is a bug that prevents the proper installation of this device tree. However, as a
-work-around, you can install the "Arduino SAM" package first. Once you have done this, open the "Boards Manager" and
-install the Duet device tree in the same way.
+IMPORTANT: As of Arduino 1.6.5, there is a bug that prevents the proper installation of this device tree. However, as a
+work-around, you must install the "Arduino SAM boards" package first. Once you have done this, open the "Boards Manager"
+again and install the Duet device tree in the same way.
 
 
 All of these files are licensed under the terms and conditions of the GPL.

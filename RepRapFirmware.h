@@ -141,13 +141,13 @@ class OutputBuffer
 		void SetReferences(size_t refs);
 
 		const char *Data() const { return data; }
-		uint16_t DataLength() const { return dataLength; }
-		uint32_t Length() const;
+		uint16_t DataLength() const { return dataLength; }		// How many bytes have been written to this instance?
+		uint32_t Length() const;								// How many bytes have been written to the whole chain?
 
 		char& operator[](size_t index);
 		char operator[](size_t index) const;
 		const char *Read(uint16_t len);
-		uint16_t BytesLeft() const { return bytesLeft; }
+		uint16_t BytesLeft() const { return bytesLeft; }		// How many bytes have not been sent yet?
 
 		int printf(const char *fmt, ...);
 		int vprintf(const char *fmt, va_list vargs);

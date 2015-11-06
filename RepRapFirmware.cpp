@@ -1090,7 +1090,8 @@ OutputBuffer *RepRap::GetConfigResponse()
 	{
 		char c, esc;
 		bool readingWhitespace = false;
-		while (configFile->Read(c))
+		size_t bytesWritten = 0, bytesAvailable = GetOutputBytesLeft(response);
+		while (configFile->Read(c) && bytesWritten + 4 < bytesAvailable)		// need 4 bytes left to finish this response
 		{
 			if (!readingWhitespace || (c != ' ' && c != '\t'))
 			{
@@ -1119,10 +1120,12 @@ OutputBuffer *RepRap::GetConfigResponse()
 				if (esc)
 				{
 					response->catf("\\%c", esc);
+					bytesWritten += 2;
 				}
 				else
 				{
 					response->cat(c);
+					bytesWritten++;
 				}
 			}
 			readingWhitespace = (c == ' ' || c == '\t');
@@ -1506,6 +1509,27 @@ bool RepRap::AllocateOutput(OutputBuffer *&buf, bool isAppending)
 	cpu_irq_restore(flags);
 
 	return true;
+}
+
+// Get the number of bytes left for continuous writing
+size_t RepRap::GetOutputBytesLeft(const OutputBuffer *writingBuffer) const
+{
+	// Get the last entry from the chain
+	const OutputBuffer *lastBuffer = writingBuffer;
+	while (lastBuffer->Next() != nullptr)
+	{
+		lastBuffer = lastBuffer->Next();
+	}
+
+	// Do we have any more buffers left for writing?
+	if (usedOutputBuffers >= OUTPUT_BUFFER_COUNT - 1)
+	{
+		// No - refer to this one only
+		return OUTPUT_BUFFER_SIZE - lastBuffer->DataLength();
+	}
+
+	// Yes - we know how many buffers are in use, so there is no need to work through the free list
+	return (OUTPUT_BUFFER_SIZE - lastBuffer->DataLength() + (OUTPUT_BUFFER_COUNT - usedOutputBuffers - 1) * OUTPUT_BUFFER_SIZE);
 }
 
 // Releases an output buffer instance and returns the next entry from the chain

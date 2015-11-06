@@ -82,6 +82,9 @@ class RepRap
 		// Setting isAppending to true will guarantee that one OutputBuffer will remain available for single allocation.
 		bool AllocateOutput(OutputBuffer *&buf, bool isAppending = false);
 
+		// Get the number of bytes left for continuous writing
+		size_t GetOutputBytesLeft(const OutputBuffer *writingBuffer) const;
+
 		// Replace an existing OutputBuffer with another one.
 		void ReplaceOutput(OutputBuffer *&destination, OutputBuffer *source);
 
