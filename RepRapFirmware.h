@@ -162,8 +162,8 @@ class OutputBuffer
 		size_t cat(const char *src, size_t len);
 		size_t cat(StringRef &str);
 
-		void EncodeString(const char *src, uint16_t srcLength, bool allowControlChars, bool encapsulateString = true);
-		void EncodeReply(OutputBuffer *src, bool allowControlChars);
+		size_t EncodeString(const char *src, uint16_t srcLength, bool allowControlChars, bool encapsulateString = true);
+		size_t EncodeReply(OutputBuffer *src, bool allowControlChars);
 
 	private:
 		OutputBuffer *next;

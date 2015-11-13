@@ -881,7 +881,7 @@ bool Webserver::HttpInterpreter::GetJsonResponse(const char* request, OutputBuff
 					type = 1;
 				}
 
-				reprap.ReplaceOutput(response, reprap.GetStatusResponse(type, true));
+				reprap.ReplaceOutput(response, reprap.GetStatusResponse(type, ResponseSource::HTTP));
 			}
 			else
 			{

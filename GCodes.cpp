@@ -68,7 +68,7 @@ void GCodes::Init()
 	longWait = platform->Time();
 	dwellTime = longWait;
 	limitAxes = true;
-	for(size_t axis=0; axis<AXES; axis++)
+	for(size_t axis = 0; axis < AXES; axis++)
 	{
 		axisIsHomed[axis] = false;
 		axisScaleFactors[axis] = 1.0;
@@ -78,7 +78,7 @@ void GCodes::Init()
 	lastFan0Value = lastFan1Value = 0.0;
 	internalCodeQueue = nullptr;
 	releasedQueueItems = nullptr;
-	for(size_t i=0; i<CODE_QUEUE_LENGTH; i++)
+	for(size_t i = 0; i < CODE_QUEUE_LENGTH; i++)
 	{
 		releasedQueueItems = new CodeQueueItem(releasedQueueItems);
 	}
@@ -1991,24 +1991,15 @@ void GCodes::HandleReply(GCodeBuffer *gb, bool error, const char *reply)
 			return;
 		}
 
-		// M105 and M408 are directly written, everything else is stored in the response buffer
-		if ((gb->Seen('M') && gb->GetIValue() == 105) || (gb->Seen('M') && gb->GetIValue() == 408))
+		// Regular text-based responses for AUX are always stored and processed by M105/M408
+		if (auxGCodeReply == nullptr && !reprap.AllocateOutput(auxGCodeReply))
 		{
-			platform->Message(AUX_MESSAGE, reply);
+			// No more space to buffer this response. Should never happen
+			return;
 		}
-		else
-		{
-			if (auxGCodeReply == nullptr)
-			{
-				if (!reprap.AllocateOutput(auxGCodeReply))
-				{
-					// No more space to buffer this response. Should never happen
-					return;
-				}
-				auxSeq++;
-			}
-			auxGCodeReply->cat(reply);
-		}
+		auxSeq++;
+		auxGCodeReply->cat(reply);
+
 		return;
 	}
 
@@ -2137,22 +2128,22 @@ void GCodes::HandleReply(GCodeBuffer *gb, bool error, OutputBuffer *reply)
 			return;
 		}
 
-		// M105 and M408 are directly written, everything else is stored in the response buffer
-		if ((gb->Seen('M') && gb->GetIValue() == 105) || (gb->Seen('M') && gb->GetIValue() == 408))
+		// JSON responses are always sent directly to the AUX device
+		if ((*reply)[0] == '{')
 		{
 			platform->Message(AUX_MESSAGE, reply);
+			return;
+		}
+
+		// Other responses are stored for M105/M408
+		auxSeq++;
+		if (auxGCodeReply == nullptr)
+		{
+			auxGCodeReply = reply;
 		}
 		else
 		{
-			if (auxGCodeReply == nullptr)
-			{
-				auxSeq++;
-				auxGCodeReply = reply;
-			}
-			else
-			{
-				auxGCodeReply->Append(reply);
-			}
+			auxGCodeReply->Append(reply);
 		}
 		return;
 	}
@@ -3434,7 +3425,8 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 
 					/* This one isn't */
 					case 4:
-						statusResponse = reprap.GetStatusResponse(3, false);			// send print status JSON-formatted response
+						// Send print status JSON-formatted response
+						statusResponse = reprap.GetStatusResponse(3, (gb == auxGCode) ? ResponseSource::AUX : ResponseSource::Generic);
 						if (statusResponse != nullptr)
 						{
 							statusResponse->cat('\n');
@@ -4202,17 +4194,12 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			break;
 
 		case 408: // Report JSON status response
-			if (gb->Seen('S'))
 			{
-				const int type = gb->GetIValue();
-				int seq = -1;
-				if (gb->Seen('P'))
-				{
-					seq = gb->GetIValue();
-				}
+				int type = gb->Seen('S') ? gb->GetIValue() : 0;
+				int seq = gb->Seen('R') ? gb->GetIValue() : -1;
 
 				OutputBuffer *statusResponse = nullptr;
-				switch(type)
+				switch (type)
 				{
 					case 0:
 					case 1:
@@ -4222,7 +4209,7 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 					case 2:
 					case 3:
 					case 4:
-						statusResponse = reprap.GetStatusResponse(type - 1, false);
+						statusResponse = reprap.GetStatusResponse(type - 1, (gb == auxGCode) ? ResponseSource::AUX : ResponseSource::Generic);
 						break;
 
 					case 5:

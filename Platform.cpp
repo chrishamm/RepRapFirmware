@@ -672,7 +672,7 @@ void Platform::SetAutoSave(bool enabled)
 #endif
 }
 
-// Send beep message to the AUX device
+// Send beep message to the AUX device. Should be eventually superseded by new-style status response
 void Platform::Beep(int freq, int ms)
 {
 	MessageF(AUX_MESSAGE, "{\"beep_freq\":%d,\"beep_length\":%d}\n", freq, ms);

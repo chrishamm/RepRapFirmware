@@ -21,6 +21,13 @@ Licence: GPL
 #ifndef REPRAP_H
 #define REPRAP_H
 
+enum class ResponseSource
+{
+	HTTP,
+	AUX,
+	Generic
+};
+
 class RepRap
 {    
 	public:
@@ -91,7 +98,7 @@ class RepRap
 		// Release one OutputBuffer instance. Returns the next item from the chain or nullptr if this was the last instance.
 		OutputBuffer *ReleaseOutput(OutputBuffer *buf);
 
-		OutputBuffer *GetStatusResponse(uint8_t type, bool forWebserver);
+		OutputBuffer *GetStatusResponse(uint8_t type, ResponseSource source);
 		OutputBuffer *GetConfigResponse();
 		OutputBuffer *GetLegacyStatusResponse(uint8_t type, int seq);
 		OutputBuffer *GetNameResponse();

@@ -663,7 +663,7 @@ void RepRap::Tick()
 // Type 1 is the ordinary JSON status response.
 // Type 2 is the same except that static parameters are also included.
 // Type 3 is the same but instead of static parameters we report print estimation values.
-OutputBuffer *RepRap::GetStatusResponse(uint8_t type, bool forWebserver)
+OutputBuffer *RepRap::GetStatusResponse(uint8_t type, ResponseSource source)
 {
 	// Need something to write to...
 	OutputBuffer *response;
@@ -743,8 +743,9 @@ OutputBuffer *RepRap::GetStatusResponse(uint8_t type, bool forWebserver)
 	/* Output - only reported once */
 	{
 		bool sendBeep = (beepDuration != 0 && beepFrequency != 0);
-		bool sendMessage = (message[0]) && ((gCodes->HaveAux() && !forWebserver) || (!gCodes->HaveAux() && forWebserver));
-		if (sendBeep || sendMessage)
+		bool sendMessage = (message[0] != 0);
+		bool sourceRight = (gCodes->HaveAux() && source == ResponseSource::AUX) || (!gCodes->HaveAux() && source == ResponseSource::HTTP);
+		if ((sendBeep || message[0] != 0) && sourceRight)
 		{
 			response->cat(",\"output\":{");
 
@@ -792,8 +793,8 @@ OutputBuffer *RepRap::GetStatusResponse(uint8_t type, bool forWebserver)
 		response->cat((ch == '[') ? "[]}" : "]}");
 	}
 
-	// G-code reply sequence for webserver
-	if (forWebserver)
+	// G-code reply sequence for webserver (seqence number for AUX is handled later)
+	if (source == ResponseSource::HTTP)
 	{
 		response->catf(",\"seq\":%d", webserver->GetReplySeq());
 
@@ -927,7 +928,7 @@ OutputBuffer *RepRap::GetStatusResponse(uint8_t type, bool forWebserver)
 		/* Tool Mapping */
 		{
 			response->cat(",\"tools\":[");
-			for(Tool *tool=toolList; tool != nullptr; tool = tool->Next())
+			for(Tool *tool = toolList; tool != nullptr; tool = tool->Next())
 			{
 				// Heaters
 				response->catf("{\"number\":%d,\"heaters\":[", tool->Number());
@@ -1012,6 +1013,19 @@ OutputBuffer *RepRap::GetStatusResponse(uint8_t type, bool forWebserver)
 
 			// Based on layers
 			response->catf(",\"layer\":%.1f}", printMonitor->EstimateTimeLeft(layerBased));
+		}
+	}
+
+	if (source == ResponseSource::AUX)
+	{
+		OutputBuffer *response = gCodes->GetAuxGCodeReply();
+		if (response != nullptr)
+		{
+			// Send the response to the last command. Do this last
+			response->catf(",\"seq\":%u,\"resp\":", gCodes->GetAuxSeq());			// send the response sequence number
+
+			// Send the JSON response
+			response->EncodeReply(response, true);									// also releases the OutputBuffer chain
 		}
 	}
 	response->cat("}");
@@ -1372,14 +1386,14 @@ OutputBuffer *RepRap::GetLegacyStatusResponse(uint8_t type, int seq)
 		response->EncodeString(myName, ARRAY_SIZE(myName), false);
 	}
 
-	int newSeq = (int)gCodes->GetAuxSeq();
-	if (type < 2 || (seq != -1 && seq != newSeq))
+	int auxSeq = (int)gCodes->GetAuxSeq();
+	if (type < 2 || (seq != -1 && auxSeq != seq))
 	{
 		// Send the response to the last command. Do this last
-		response->catf(",\"seq\":%u,\"resp\":", newSeq);						// send the response sequence number
+		response->catf(",\"seq\":%u,\"resp\":", auxSeq);						// send the response sequence number
 
 		// Send the JSON response
-		response->EncodeReply(gCodes->GetAuxGCodeReply(), true);
+		response->EncodeReply(gCodes->GetAuxGCodeReply(), true);				// also releases the OutputBuffer chain
 	}
 	response->cat("}");
 
@@ -1436,6 +1450,7 @@ OutputBuffer *RepRap::GetFilesResponse(const char *dir, bool flagsDirs)
 	FileInfo fileInfo;
 	bool firstFile = true;
 	bool gotFile = platform->GetMassStorage()->FindFirst(dir, fileInfo);
+	size_t bytesLeft = GetOutputBytesLeft(response);	// don't write more bytes than we can
 
 	char filename[FILENAME_LENGTH];
 	filename[0] = '*';
@@ -1443,10 +1458,7 @@ OutputBuffer *RepRap::GetFilesResponse(const char *dir, bool flagsDirs)
 
 	while (gotFile)
 	{
-		if (!firstFile)
-		{
-			response->cat(',');
-		}
+		// Get the long filename if possible
 		if (flagsDirs && fileInfo.isDirectory)
 		{
 			strncpy(filename + sizeof(char), fileInfo.fileName, FILENAME_LENGTH - 1);
@@ -1458,7 +1470,19 @@ OutputBuffer *RepRap::GetFilesResponse(const char *dir, bool flagsDirs)
 			fname = fileInfo.fileName;
 		}
 
-		response->EncodeString(fname, FILENAME_LENGTH, false);
+		// Make sure we can end this response properly
+		if (bytesLeft < strlen(fname) * 2 + 4)
+		{
+			// No more space available - stop here
+			break;
+		}
+
+		// Write separator and filename
+		if (!firstFile)
+		{
+			bytesLeft -= response->cat(',');
+		}
+		bytesLeft -= response->EncodeString(fname, FILENAME_LENGTH, false);
 
 		firstFile = false;
 		gotFile = platform->GetMassStorage()->FindNext(fileInfo);
@@ -1562,7 +1586,8 @@ void RepRap::Beep(int freq, int ms)
 {
 	if (gCodes->HaveAux())
 	{
-		// If there is an LCD device present, make it beep
+		// If there is an AUX device present, make it beep. This should be eventually
+		// removed when PanelDue can deal with new-style status responses.
 		platform->Beep(freq, ms);
 	}
 	else
@@ -1992,17 +2017,18 @@ size_t OutputBuffer::cat(StringRef &str)
 	return cat(str.Pointer(), str.Length());
 }
 
-// Encode a string in JSON format and append it to a string buffer, truncating it if necessary to leave the specified amount of room
-void OutputBuffer::EncodeString(const char *src, uint16_t srcLength, bool allowControlChars, bool encapsulateString)
+// Encode a string in JSON format and append it to a string buffer and return the number of bytes written
+size_t OutputBuffer::EncodeString(const char *src, uint16_t srcLength, bool allowControlChars, bool encapsulateString)
 {
+	size_t bytesWritten = 0;
 	if (encapsulateString)
 	{
-		cat('"');
+		bytesWritten += cat('"');
 	}
 
 	size_t srcPointer = 1;
 	char c = *src++;
-	while (srcPointer < srcLength && c != 0 && (c >= ' ' || allowControlChars))
+	while (srcPointer <= srcLength && c != 0 && (c >= ' ' || allowControlChars))
 	{
 		char esc;
 		switch (c)
@@ -2027,14 +2053,14 @@ void OutputBuffer::EncodeString(const char *src, uint16_t srcLength, bool allowC
 				break;
 		}
 
-		if (esc)
+		if (esc != 0)
 		{
-			cat('\\');
-			cat(esc);
+			bytesWritten += cat('\\');
+			bytesWritten += cat(esc);
 		}
 		else
 		{
-			cat(c);
+			bytesWritten += cat(c);
 		}
 
 		c = *src++;
@@ -2043,21 +2069,23 @@ void OutputBuffer::EncodeString(const char *src, uint16_t srcLength, bool allowC
 
 	if (encapsulateString)
 	{
-		cat('"');
+		bytesWritten += cat('"');
 	}
+	return bytesWritten;
 }
 
-void OutputBuffer::EncodeReply(OutputBuffer *src, bool allowControlChars)
+size_t OutputBuffer::EncodeReply(OutputBuffer *src, bool allowControlChars)
 {
-	cat('"');
+	size_t bytesWritten = cat('"');
 
 	while (src != nullptr)
 	{
-		EncodeString(src->Data(), src->DataLength(), allowControlChars, false);
+		bytesWritten += EncodeString(src->Data(), src->DataLength(), allowControlChars, false);
 		src = reprap.ReleaseOutput(src);
 	}
 
-	cat('"');
+	bytesWritten += cat('"');
+	return bytesWritten;
 }
 
 //*************************************************************************************************
