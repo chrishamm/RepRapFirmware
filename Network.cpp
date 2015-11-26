@@ -249,11 +249,11 @@ static err_t conn_accept(void *arg, tcp_pcb *pcb, err_t err)
 			tcp_accepted(telnet_pcb);
 			break;
 
-		default:		// HTTP and FTP data
+		default:			// HTTP and FTP data
 			tcp_accepted((pcb->local_port == httpPort) ? http_pcb : ftp_pasv_pcb);
 			break;
 	}
-	tcp_arg(pcb, cs);		// tell LWIP that this is the structure we wish to be passed for our callbacks
+	tcp_arg(pcb, cs);			// tell LWIP that this is the structure we wish to be passed for our callbacks
 	tcp_recv(pcb, conn_recv);	// tell LWIP that we wish to be informed of incoming data by a call to the conn_recv() function
 	tcp_err(pcb, conn_err);
 	tcp_poll(pcb, conn_poll, 4);
@@ -819,7 +819,7 @@ bool Network::AcquireTelnetTransaction()
 }
 
 // Retrieves the NetworkTransaction of a sending connection to which data can be appended to,
-// or prepares a released NetworkTransaction, which can easily be sent via SendAndClose.
+// or prepares a released NetworkTransaction, which can easily be sent via Commit().
 bool Network::AcquireTransaction(ConnectionState *cs)
 {
 	// Make sure we have a valid connection
@@ -864,7 +864,7 @@ bool Network::AcquireTransaction(ConnectionState *cs)
 		transactionToUse->Set(nullptr, cs, dataReceiving); // set it to dataReceiving as we expect a response
 	}
 
-	// Replace the first entry of readyTransactions with our new transaction, so it can be used by SendAndClose().
+	// Replace the first entry of readyTransactions with our new transaction, so it can be used by Commit().
 	PrependTransaction(&readyTransactions, transactionToUse);
 	return true;
 }
@@ -1283,6 +1283,15 @@ void NetworkTransaction::Commit(bool keepConnectionAlive)
 			}
 		}
 	}
+}
+
+void NetworkTransaction::Defer()
+{
+	// First free up the allocated pbufs
+	FreePbuf();
+
+	// Call LWIP task to process tcp_recved(). This will hopefully send an ACK
+	while (ethernet_read());
 }
 
 // This method should be called if we don't want to send data to the client and if

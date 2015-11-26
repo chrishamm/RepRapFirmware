@@ -133,4 +133,4 @@ upload: $(OUTPUT_DIR)/RepRapFirmware.bin
 	@stty -F $(DUET_PORT) 1200 -ixon -crtscts || true
 	@sleep 2
 	@echo "=> Flashing new firmware binary..."
-	@$(BOSSAC_PATH) -u -e -w -v -b $(OUTPUT_DIR)/RepRapFirmware.bin -R
+	@$(BOSSAC_PATH) -u -e -w -b $(OUTPUT_DIR)/RepRapFirmware.bin -R

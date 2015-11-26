@@ -28,7 +28,7 @@ const size_t GCODE_OVERLAP_SIZE = 100;				// Size of the overlapping buffer for 
 const float LAYER_HEIGHT_TOLERANCE = 0.025;			// For comparing two Z heights (in mm)
 
 const size_t MAX_LAYER_SAMPLES = 5;					// Number of layer samples for end-time estimation (except for first layer)
-const float ESTIMATION_MIN_FILAMENT_USAGE = 0.025;	// Minimum per cent after which the first layer height is determined
+const float ESTIMATION_MIN_FILAMENT_USAGE = 0.01;	// Minimum per cent of filament to be printed before the filament-based estimation returns values
 const float FIRST_LAYER_SPEED_FACTOR = 0.25;		// First layer speed factor compared to other layers (only for layer-based estimation)
 
 enum PrintEstimationMethod
@@ -73,9 +73,12 @@ class PrintMonitor
 		// The following two methods need to be called until they return true - this may take a few runs
 		bool GetFileInfo(const char *directory, const char *fileName, GCodeFileInfo& info);
 		bool GetFileInfoResponse(const char *filename, OutputBuffer *&response);
+		void StopParsing(const char *filename);
 
+		// Return an estimate in seconds based on a specific estimation method
 		float EstimateTimeLeft(PrintEstimationMethod method) const;
 
+		// Provide some information about the file being printed
 		unsigned int GetCurrentLayer() const;
 		float GetCurrentLayerTime() const;
 		float GetPrintDuration() const;
@@ -87,6 +90,26 @@ class PrintMonitor
 		Platform *platform;
 		GCodes *gCodes;
 		float longWait;
+
+		// Information/Events concerning the file being printed
+		void WarmUpComplete();
+		void FirstLayerComplete();
+		void LayerComplete();
+
+		bool isPrinting, isHeating;
+		float printStartTime;
+		float pauseStartTime, totalPauseTime;
+
+		unsigned int currentLayer;
+		float warmUpDuration, firstLayerDuration;
+		float firstLayerFilament, firstLayerProgress;
+		float lastLayerChangeTime, lastLayerFilament;
+
+		unsigned int numLayerSamples;
+		float layerDurations[MAX_LAYER_SAMPLES];
+		float filamentUsagePerLayer[MAX_LAYER_SAMPLES];
+		float fileProgressPerLayer[MAX_LAYER_SAMPLES];
+		float layerEstimatedTimeLeft;
 
 		// We parse G-Code files in multiple stages. These variables hold the required information
 		FileParseState parseState;
@@ -101,40 +124,26 @@ class PrintMonitor
 		GCodeFileInfo printingFileInfo;
 		char filenameBeingPrinted[FILENAME_LENGTH];
 
-		bool isPrinting;
-		float printStartTime;
-		unsigned int currentLayer;
-		float warmUpDuration;
-
-		bool HeightMatches(float actual, float expected);
-
-		float firstLayerDuration;
-		float firstLayerFilament;
-		float firstLayerProgress;
-
-		float lastLayerTime, lastLayerFilament;
-		unsigned int numLayerSamples;
-		float layerDurations[MAX_LAYER_SAMPLES];
-		float filamentUsagePerLayer[MAX_LAYER_SAMPLES];
-		float fileProgressPerLayer[MAX_LAYER_SAMPLES];
-		float layerEstimatedTimeLeft;
-
+		// G-Code parser methods
 		bool FindHeight(const char* buf, size_t len, float& height) const;
 		bool FindFirstLayerHeight(const char* buf, size_t len, float& layerHeight) const;
 		bool FindLayerHeight(const char* buf, size_t len, float& layerHeight) const;
 		unsigned int FindFilamentUsed(const char* buf, size_t len, float *filamentUsed, unsigned int maxFilaments) const;
 
 		float accumulatedParseTime, accumulatedReadTime;
+
+		// Helper methods
+		bool HeightMatches(float actual, float expected) const;
 };
 
 inline bool PrintMonitor::IsPrinting() const { return isPrinting; }
 inline unsigned int PrintMonitor::GetCurrentLayer() const { return currentLayer; }
-inline float PrintMonitor::GetCurrentLayerTime() const { return (lastLayerTime > 0.0) ? (platform->Time() - lastLayerTime) : 0.0; }
-inline float PrintMonitor::GetPrintDuration() const { return (printStartTime > 0.0) ? (platform->Time() - printStartTime) : 0.0; }
-inline float PrintMonitor::GetWarmUpDuration() const { return warmUpDuration; }
-inline float PrintMonitor::GetFirstLayerDuration() const { return firstLayerDuration; }
+inline float PrintMonitor::GetCurrentLayerTime() const { return (lastLayerChangeTime > 0.0) ? (GetPrintDuration() - lastLayerChangeTime) : 0.0; }
+inline float PrintMonitor::GetWarmUpDuration() const { return (warmUpDuration > 0.0) ? warmUpDuration : (isHeating ? GetPrintDuration() : 0.0); }
+inline float PrintMonitor::GetFirstLayerDuration() const { return (firstLayerDuration > 0.0) ? firstLayerDuration : ((warmUpDuration > 0) ? GetPrintDuration() - warmUpDuration : 0.0); }
 inline float PrintMonitor::GetFirstLayerHeight() const { return printingFileParsed ? printingFileInfo.firstLayerHeight : 0.0; }
-inline bool PrintMonitor::HeightMatches(float actual, float expected) { return (expected - LAYER_HEIGHT_TOLERANCE < actual) && (expected + LAYER_HEIGHT_TOLERANCE > actual); }
+
+inline bool PrintMonitor::HeightMatches(float actual, float expected) const { return (expected - LAYER_HEIGHT_TOLERANCE < actual) && (expected + LAYER_HEIGHT_TOLERANCE > actual); }
 
 #endif /* PRINTMONITOR_H */
 

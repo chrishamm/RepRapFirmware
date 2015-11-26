@@ -138,7 +138,8 @@ class OutputBuffer
 
 		OutputBuffer *Next() const { return next; }
 		void Append(OutputBuffer *other);
-		void SetReferences(size_t refs);
+		size_t References() const { return references; }
+		void IncreaseReferences(size_t refs);
 
 		const char *Data() const { return data; }
 		uint16_t DataLength() const { return dataLength; }		// How many bytes have been written to this instance?
@@ -171,7 +172,7 @@ class OutputBuffer
 		char data[OUTPUT_BUFFER_SIZE];
 		uint16_t dataLength, bytesLeft;
 
-		size_t referenceCounter;
+		size_t references;
 };
 
 #include "Network.h"

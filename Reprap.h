@@ -63,6 +63,7 @@ class RepRap
 		//Tool* GetToolByDrive(int driveNumber);
 		void SetToolVariables(int toolNumber, float* standbyTemperatures, float* activeTemperatures);
 		bool ToolWarningsAllowed();
+		bool IsHeaterAssignedToTool(int8_t heater) const;
 
 		unsigned int GetProhibitedExtruderMovements(unsigned int extrusions, unsigned int retractions);
 		void PrintTool(int toolNumber, StringRef& reply);
@@ -89,11 +90,15 @@ class RepRap
 		// Setting isAppending to true will guarantee that one OutputBuffer will remain available for single allocation.
 		bool AllocateOutput(OutputBuffer *&buf, bool isAppending = false);
 
-		// Get the number of bytes left for continuous writing
+		// Get the number of bytes left for allocation. If writingBuffer is not NULL, this returns the number of free bytes for
+		// continuous writes, i.e. for writes that need to allocate an extra OutputBuffer instance to finish the message.
 		size_t GetOutputBytesLeft(const OutputBuffer *writingBuffer) const;
 
 		// Replace an existing OutputBuffer with another one.
 		void ReplaceOutput(OutputBuffer *&destination, OutputBuffer *source);
+
+		// Truncate an OutputBuffer instance to free up more memory. Returns the number of released bytes.
+		size_t TruncateOutput(OutputBuffer *buffer, size_t bytesNeeded);
 
 		// Release one OutputBuffer instance. Returns the next item from the chain or nullptr if this was the last instance.
 		OutputBuffer *ReleaseOutput(OutputBuffer *buf);
@@ -190,7 +195,12 @@ inline uint16_t RepRap::GetTicksInSpinState() const { return ticksInSpinState; }
 
 inline void RepRap::ReplaceOutput(OutputBuffer *&destination, OutputBuffer *source)
 {
-	ReleaseOutput(destination);
+	OutputBuffer *temp = destination;
+	while (temp != nullptr)
+	{
+		temp = ReleaseOutput(temp);
+	}
+
 	destination = source;
 }
 

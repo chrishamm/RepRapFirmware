@@ -39,6 +39,7 @@ const uint16_t gcodeBufferLength = 512;			// size of our gcode ring buffer, pref
 
 const uint16_t webUploadBufferSize = 2300;		// maximum size of HTTP GET upload packets (webMessageLength - 700)
 const uint16_t webMessageLength = 3000;			// maximum length of the web message we accept after decoding
+const size_t minHttpResponseSize = 1024;		// minimum number of bytes required for an HTTP response
 
 const size_t maxCommandWords = 4;				// max number of space-separated words in the command
 const size_t maxQualKeys = 5;					// max number of key/value pairs in the qualifier
@@ -162,7 +163,7 @@ class Webserver
 				uint16_t GetGCodeBufferSpace() const;
 				uint32_t GetReplySeq() const;
 
-				bool CheckDeferredRequest();					// used for deferred requests. HTTP request is only parsed if this returns true
+				bool IsReady();					// returns true if the transaction can be parsed
 
 			private:
 
@@ -222,11 +223,10 @@ class Webserver
 					float lastQueryTime;
 					bool isPostUploading;
 					uint16_t postPort;
-					bool sendGCodeReply;
 				};
 
 				HttpSession sessions[maxSessions];
-				size_t numActiveSessions;
+				size_t numSessions, clientsServed;
 
 				bool Authenticate();
 				bool IsAuthenticated() const;

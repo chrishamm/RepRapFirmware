@@ -635,6 +635,23 @@ bool RepRap::ToolWarningsAllowed()
 	return false;
 }
 
+bool RepRap::IsHeaterAssignedToTool(int8_t heater) const
+{
+	for(Tool *tool = toolList; tool != nullptr; tool = tool->Next())
+	{
+		for(size_t i = 0; i < tool->HeaterCount(); i++)
+		{
+			if (tool->Heater(i) == heater)
+			{
+				// It's already in use by some tool
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
 void RepRap::Tick()
 {
 	if (active && !resetting)
@@ -904,6 +921,18 @@ OutputBuffer *RepRap::GetStatusResponse(uint8_t type, ResponseSource source)
 		response->catf(",\"coldExtrudeTemp\":%1.f", heat->ColdExtrude() ? 0 : HOT_ENOUGH_TO_EXTRUDE);
 		response->catf(",\"coldRetractTemp\":%1.f", heat->ColdExtrude() ? 0 : HOT_ENOUGH_TO_RETRACT);
 
+		// Endstops
+		uint16_t endstops = 0;
+		for(size_t drive = 0; drive < DRIVES; drive++)
+		{
+			EndStopHit stopped = platform->Stopped(drive);
+			if (stopped == EndStopHit::highHit || stopped == EndStopHit::lowHit)
+			{
+				endstops |= (1 << drive);
+			}
+		}
+		response->catf(",\"endstops\":%d", endstops);
+
 		// Delta configuration
 		response->catf(",\"geometry\":\"%s\"", move->GetGeometryString());
 
@@ -995,6 +1024,7 @@ OutputBuffer *RepRap::GetStatusResponse(uint8_t type, ResponseSource source)
 		response->catf(",\"firstLayerDuration\":%.1f", printMonitor->GetFirstLayerDuration());
 
 		// First Layer Height
+		// NB: This shouldn't be needed any more, but leave it here for the case that the file-based first-layer detection fails
 		response->catf(",\"firstLayerHeight\":%.2f", printMonitor->GetFirstLayerHeight());
 
 		// Print Duration
@@ -1069,11 +1099,24 @@ OutputBuffer *RepRap::GetConfigResponse()
 		ch = ',';
 	}
 
+	// Motor currents
+	response->cat("],\"currents\":");
+	ch = '[';
+	for (size_t drive = 0; drive < DRIVES; drive++)
+	{
+		response->catf("%c%.2f", ch, platform->MotorCurrent(drive));
+		ch = ',';
+	}
+
 	// Firmware details
 	response->catf("],\"firmwareElectronics\":\"%s\"", ELECTRONICS);
 	response->catf(",\"firmwareName\":\"%s\"", NAME);
 	response->catf(",\"firmwareVersion\":\"%s\"", VERSION);
 	response->catf(",\"firmwareDate\":\"%s\"", DATE);
+
+	// Motor idle parameters
+	response->catf(",\"idleCurrentFactor\":%.1f", platform->GetIdleCurrentFactor() * 100.0);
+	response->catf(",\"idleTimeout\":%.1f", move->IdleTimeout());
 
 	// Minimum feedrates
 	response->cat(",\"minFeedrates\":");
@@ -1093,7 +1136,7 @@ OutputBuffer *RepRap::GetConfigResponse()
 		ch = ',';
 	}
 
-	// Configuration File (whitespaces are skipped, otherwise we risk overflowing the response->buffer)
+	// Configuration File (whitespaces are skipped, otherwise we easily risk overflowing the response buffer)
 	response->cat("],\"configFile\":\"");
 	FileStore *configFile = platform->GetFileStore(platform->GetSysDir(), platform->GetConfigFile(), false);
 	if (configFile == nullptr)
@@ -1104,8 +1147,8 @@ OutputBuffer *RepRap::GetConfigResponse()
 	{
 		char c, esc;
 		bool readingWhitespace = false;
-		size_t bytesWritten = 0, bytesAvailable = GetOutputBytesLeft(response);
-		while (configFile->Read(c) && bytesWritten + 4 < bytesAvailable)		// need 4 bytes left to finish this response
+		size_t bytesWritten = 0, bytesLeft = GetOutputBytesLeft(response);
+		while (configFile->Read(c) && bytesWritten + 4 < bytesLeft)		// need 4 bytes to finish this response
 		{
 			if (!readingWhitespace || (c != ' ' && c != '\t'))
 			{
@@ -1451,7 +1494,6 @@ OutputBuffer *RepRap::GetFilesResponse(const char *dir, bool flagsDirs)
 	bool firstFile = true;
 	bool gotFile = platform->GetMassStorage()->FindFirst(dir, fileInfo);
 	size_t bytesLeft = GetOutputBytesLeft(response);	// don't write more bytes than we can
-
 	char filename[FILENAME_LENGTH];
 	filename[0] = '*';
 	const char *fname;
@@ -1528,7 +1570,7 @@ bool RepRap::AllocateOutput(OutputBuffer *&buf, bool isAppending)
 
 	buf->next = nullptr;
 	buf->dataLength = buf->bytesLeft = 0;
-	buf->referenceCounter = 1; // Assume it's only used once by default
+	buf->references = 1; // Assume it's only used once by default
 
 	cpu_irq_restore(flags);
 
@@ -1538,7 +1580,13 @@ bool RepRap::AllocateOutput(OutputBuffer *&buf, bool isAppending)
 // Get the number of bytes left for continuous writing
 size_t RepRap::GetOutputBytesLeft(const OutputBuffer *writingBuffer) const
 {
-	// Get the last entry from the chain
+	// If writingBuffer is NULL, just return how much space there is left for everything
+	if (writingBuffer == nullptr)
+	{
+		return (OUTPUT_BUFFER_COUNT - usedOutputBuffers) * OUTPUT_BUFFER_SIZE;
+	}
+
+	// Otherwise get the last entry from the chain
 	const OutputBuffer *lastBuffer = writingBuffer;
 	while (lastBuffer->Next() != nullptr)
 	{
@@ -1546,7 +1594,7 @@ size_t RepRap::GetOutputBytesLeft(const OutputBuffer *writingBuffer) const
 	}
 
 	// Do we have any more buffers left for writing?
-	if (usedOutputBuffers >= OUTPUT_BUFFER_COUNT - 1)
+	if (usedOutputBuffers >= OUTPUT_BUFFER_COUNT)
 	{
 		// No - refer to this one only
 		return OUTPUT_BUFFER_SIZE - lastBuffer->DataLength();
@@ -1556,17 +1604,49 @@ size_t RepRap::GetOutputBytesLeft(const OutputBuffer *writingBuffer) const
 	return (OUTPUT_BUFFER_SIZE - lastBuffer->DataLength() + (OUTPUT_BUFFER_COUNT - usedOutputBuffers - 1) * OUTPUT_BUFFER_SIZE);
 }
 
+// Truncate an output buffer to free up more memory. Returns the number of released bytes.
+size_t RepRap::TruncateOutput(OutputBuffer *buffer, size_t bytesNeeded)
+{
+	// Can we free up space from this entry?
+	if (buffer == nullptr || buffer->Next() == nullptr)
+	{
+		// No
+		return 0;
+	}
+
+	// Yes - free up the last entry (entries) from this chain
+	size_t releasedBytes = OUTPUT_BUFFER_SIZE;
+	OutputBuffer *previousItem;
+	do {
+		// Get the last entry from the chain
+		previousItem = buffer;
+		OutputBuffer *lastItem = previousItem->Next();
+		while (lastItem->Next() != nullptr)
+		{
+			previousItem = lastItem;
+			lastItem = lastItem->Next();
+		}
+
+		// Unlink and free it
+		previousItem->next = nullptr;
+		ReleaseOutput(lastItem);
+		releasedBytes += OUTPUT_BUFFER_SIZE;
+	} while (previousItem != buffer && releasedBytes < bytesNeeded);
+
+	return releasedBytes;
+}
+
 // Releases an output buffer instance and returns the next entry from the chain
 OutputBuffer *RepRap::ReleaseOutput(OutputBuffer *buf)
 {
 	const irqflags_t flags = cpu_irq_save();
-
 	OutputBuffer *nextBuffer = buf->next;
 
 	// If this one is reused by another piece of code, don't free it up
-	if (buf->referenceCounter > 1)
+	if (buf->references > 1)
 	{
-		buf->referenceCounter--;
+		buf->references--;
+		buf->bytesLeft = buf->dataLength;
 		cpu_irq_restore(flags);
 		return nextBuffer;
 	}
@@ -1574,11 +1654,9 @@ OutputBuffer *RepRap::ReleaseOutput(OutputBuffer *buf)
 	// Otherwise prepend it to the list of free output buffers again
 	buf->next = freeOutputBuffers;
 	freeOutputBuffers = buf;
-
 	usedOutputBuffers--;
 
 	cpu_irq_restore(flags);
-
 	return nextBuffer;
 }
 
@@ -1781,12 +1859,12 @@ void OutputBuffer::Append(OutputBuffer *other)
 	}
 }
 
-void OutputBuffer::SetReferences(size_t refs)
+void OutputBuffer::IncreaseReferences(size_t refs)
 {
-	referenceCounter = refs;
+	references += refs;
 	if (next != nullptr)
 	{
-		next->SetReferences(refs);
+		next->IncreaseReferences(refs);
 	}
 }
 
@@ -1905,6 +1983,7 @@ size_t OutputBuffer::copy(const char *src, size_t len)
 				// We cannot store the whole string. Should never happen
 				break;
 			}
+			currentBuffer->references = references;
 
 			const size_t copyLength = min<size_t>(OUTPUT_BUFFER_SIZE, len - bytesCopied);
 			memcpy(currentBuffer->data, src + bytesCopied, copyLength);
@@ -1954,6 +2033,7 @@ size_t OutputBuffer::cat(const char c)
 			// We cannot store any more data. Should never happen
 			return 0;
 		}
+		nextBuffer->references = references;
 		nextBuffer->copy(c);
 
 		lastBuffer->next = nextBuffer;
@@ -1995,6 +2075,7 @@ size_t OutputBuffer::cat(const char *src, size_t len)
 			// We cannot store any more data. Should never happen
 			return 0;
 		}
+		nextBuffer->references = references;
 		bytesCopied += nextBuffer->copy(src + copyLength, len - copyLength);
 		lastBuffer->next = nextBuffer;
 

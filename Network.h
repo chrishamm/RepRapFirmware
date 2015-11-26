@@ -27,7 +27,7 @@ Separated out from Platform.h by dc42 and extended by zpl
 // Currently we set the MSS (in file network/lwipopts.h) to 1432 which matches the value used by most versions of Windows
 // and therefore avoids additional memory use and fragmentation.
 
-static const uint8_t NETWORK_TRANSACTION_COUNT = 24;				// Number of NetworkTransactions to be used for network IO
+static const uint8_t NETWORK_TRANSACTION_COUNT = 16;				// Number of NetworkTransactions to be used for network IO
 static const float TCP_WRITE_TIMEOUT = 4.0;	 						// Seconds to wait for data we have written to be acknowledged
 
 
@@ -200,9 +200,6 @@ class Network
 
 		ConnectionState * volatile freeConnections;		// May be referenced by Ethernet ISR, hence it's volatile
 };
-
-
-inline void NetworkTransaction::Defer() { FreePbuf(); }	// Sends ACK to avoid TCP retransmissions
 
 #endif
 

@@ -903,9 +903,14 @@ void FanInterrupt()
 
 void Platform::InitialiseInterrupts()
 {
-	// Set the tick interrupt to the highest priority. We need to to monitor the heaters and kick the watchdog.
-	NVIC_SetPriority(SysTick_IRQn, 0);						// set priority for tick interrupts
-	NVIC_SetPriority(UART_IRQn, 2);							// set priority for UART interrupt - must be higher than step interrupt
+	// The SAM3X NVIC supports up to 16 user-defined priority levels (0-15) with 0 being the highest.
+	// First set the tick interrupt to the highest priority. We need to to monitor the heaters and kick the watchdog.
+	tickState = 0;
+	currentHeater = 0;
+	NVIC_SetPriority(SysTick_IRQn, 0);
+
+	// UART isn't as critical as the SysTick IRQ, but still important enough to prevent garbage on the serial line
+	Serial.setInterruptPriority(1);							// set priority for UART interrupt - must be higher than step interrupt
 
 	// Timer interrupt for stepper motors
 	// The clock rate we use is a compromise. Too fast and the 64-bit square roots take a long time to execute. Too slow and we lose resolution.
@@ -916,31 +921,29 @@ void Platform::InitialiseInterrupts()
 	TC1 ->TC_CHANNEL[0].TC_IDR = ~(uint32_t)0;				// interrupts disabled for now
 	TC_Start(TC1, 0);
 	TC_GetStatus(TC1, 0);									// clear any pending interrupt
-	NVIC_SetPriority(TC3_IRQn, 4);							// set high priority for this IRQ; it's time-critical
+	NVIC_SetPriority(TC3_IRQn, 2);							// set high priority for this IRQ; it's time-critical
 	NVIC_EnableIRQ(TC3_IRQn);
 
-	// Timer interrupt to keep the networking timers running (called at 16Hz)
+	// Timer interrupt to keep the networking timers running (called at 8Hz)
 	pmc_enable_periph_clk((uint32_t) TC4_IRQn);
 	TC_Configure(TC1, 1, TC_CMR_WAVE | TC_CMR_WAVSEL_UP_RC | TC_CMR_TCCLKS_TIMER_CLOCK2);
-	uint32_t rc = (VARIANT_MCK/8)/16;						// 8 because we selected TIMER_CLOCK2 above
+	uint32_t rc = (VARIANT_MCK/8)/8;						// 8 because we selected TIMER_CLOCK2 above
 	TC_SetRA(TC1, 1, rc/2);									// 50% high, 50% low
 	TC_SetRC(TC1, 1, rc);
 	TC_Start(TC1, 1);
 	TC1 ->TC_CHANNEL[1].TC_IER = TC_IER_CPCS;
 	TC1 ->TC_CHANNEL[1].TC_IDR = ~TC_IER_CPCS;
-	NVIC_SetPriority(TC4_IRQn, 8);							// Ethernet isn't as critical as the step interrupt
+	NVIC_SetPriority(TC4_IRQn, 3);							// Ethernet timers aren't as critical as the step and UART interrupts
 	NVIC_EnableIRQ(TC4_IRQn);
 
 	// Interrupt for 4-pin PWM fan sense line
 	if (coolingFanRpmPin >= 0)
 	{
+		// Priorities for attachInterrupt() are defined in cores/arduino/WInterrupts.c
 		attachInterrupt(coolingFanRpmPin, FanInterrupt, FALLING);
 	}
 
-	// Tick interrupt for ADC conversions
-	tickState = 0;
-	currentHeater = 0;
-
+	// Initialisation done
 	active = true;
 }
 
@@ -1647,7 +1650,7 @@ void Platform::Message(const MessageType type, OutputBuffer *buffer)
 
 		case GENERIC_MESSAGE:
 			// Message that is to be sent to the web & host.
-			buffer->SetReferences(3);		// This one is referenced by three destinations
+			buffer->IncreaseReferences(2);		// This one is handled by two additional destinations
 			Message(HOST_MESSAGE, buffer);
 			Message(HTTP_MESSAGE, buffer);
 			Message(TELNET_MESSAGE, buffer);

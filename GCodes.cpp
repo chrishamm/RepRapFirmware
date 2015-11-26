@@ -300,6 +300,12 @@ void GCodes::Spin()
 				{
 					fileStack[stackPointer + 1].Close();
 					reprap.GetPrintMonitor()->StoppedPrint();
+
+					if (platform->Emulating() == marlin)
+					{
+						// If we're emulating Marlin, try to send a notification to Pronterface
+						HandleReply(fileGCode, false, "Done printing file\n");
+					}
 				}
 				break;
 			}
@@ -781,8 +787,7 @@ bool GCodes::DoFileMacro(const GCodeBuffer *gb, const char* fileName)
 
 	if (f == nullptr)
 	{
-		platform->MessageF(GENERIC_MESSAGE, "Macro file %s not found.\n", fileName);
-		Pop();	// If anything goes wrong in here, Pop() ought to log an error message
+		Pop();
 		return true;
 	}
 	fileBeingPrinted.Set(f);
@@ -2037,7 +2042,7 @@ void GCodes::HandleReply(GCodeBuffer *gb, bool error, const char *reply)
 			return;
 
 		case marlin:
-			if (gb->Seen('M') && gb->GetIValue() == 28)
+			if (gb->Seen('M') && gb->GetIValue() == 20)
 			{
 				platform->Message(type, "Begin file list\n");
 				platform->Message(type, reply);
@@ -2182,7 +2187,7 @@ void GCodes::HandleReply(GCodeBuffer *gb, bool error, OutputBuffer *reply)
 			return;
 
 		case marlin:
-			if (gb->Seen('M') && gb->GetIValue() == 28)
+			if (gb->Seen('M') && gb->GetIValue() == 20)
 			{
 				platform->Message(type, "Begin file list\n");
 				platform->Message(type, reply);
@@ -2705,12 +2710,12 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			if (!AllMovesAreFinishedAndMoveBufferIsLoaded())
 				return false;
 
-			// If Marlin is emulated and M1 is called during a live print, run M25 instead
+			// If Marlin is emulated and M1 is called, run M25 (Pause) instead
 			if (code == 1 && (gb == serialGCode || gb == telnetGCode) && platform->Emulating() == marlin)
 			{
 				if (reprap.GetPrintMonitor()->IsPrinting() && IsRunning())
 				{
-					gb->Put("M25", 3);
+					gb->Put("M25\n", 4);
 					return false;
 				}
 			}
@@ -2731,8 +2736,8 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 					DisableDrives();
 				}
 
-				// M1 switches off all heaters, M0 does this only if the print is not paused
-				if (code == 1 || !IsPaused())
+				// Switch off heaters only if the 'H' parameter is not passed or its value is zero
+				if (!gb->Seen('H') || gb->GetIValue() == 0)
 				{
 					Tool* tool = reprap.GetCurrentTool();
 					if(tool != nullptr)
@@ -2882,6 +2887,10 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			}
 
 		case 21: // Initialise SD - ignore
+			break;
+
+		case 22: // Release SD card
+			reply.printf("You cannot eject the SD card on a powered-up %s.\n", platform->GetElectronicsString());
 			break;
 
 		case 23: // Set file to print
@@ -3176,7 +3185,7 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 		case 27: // Report print status - Deprecated
 			if (reprap.GetPrintMonitor()->IsPrinting())
 			{
-				reply.copy("SD printing.\n");
+				reply.printf("SD printing byte %lu/%lu\n", fileBeingPrinted.Position(), fileBeingPrinted.Length());
 			}
 			else
 			{
@@ -3758,17 +3767,19 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 
 		case 140: // Set bed temperature
 			{
-				int8_t bedHeater;
+				int bedHeater;
 				if (gb->Seen('H'))
 				{
 					bedHeater = gb->GetIValue();
 					if (bedHeater < 0)
 					{
-						// Make sure we stay within reasonable boundaries...
-						bedHeater = -1;
-
-						// If we're disabling the hot bed, make sure the old heater is turned off
-						reprap.GetHeat()->SwitchOff(reprap.GetHeat()->GetBedHeater());
+						const int8_t currentBedHeater = reprap.GetHeat()->GetBedHeater();
+						if (currentBedHeater != -1)
+						{
+							reprap.GetHeat()->SwitchOff(currentBedHeater);	// If we're disabling the hot bed, make sure its heater is turned off
+						}
+						reprap.GetHeat()->SetBedHeater(-1);
+						break;
 					}
 					else if (bedHeater >= HEATERS)
 					{
@@ -3776,13 +3787,25 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 						error = true;
 						break;
 					}
-					reprap.GetHeat()->SetBedHeater(bedHeater);
 
-					if (bedHeater < 0)
+					// Check if the heater isn't already in use by a tool
+					if (reprap.IsHeaterAssignedToTool(bedHeater))
 					{
-						// Stop here if the hot bed has been disabled
+						reply.printf("Heater %d is already in use by a tool!\n", bedHeater);
+						error = true;
 						break;
 					}
+
+					// Then check if it isn't already used by the chamber heater
+					if (reprap.GetHeat()->GetChamberHeater() == bedHeater)
+					{
+						reply.printf("Heater %d is already in use as chamber heater!\n", bedHeater);
+						error = true;
+						break;
+					}
+
+					// Set new bed heater
+					reprap.GetHeat()->SetBedHeater(bedHeater);
 				}
 				else
 				{
@@ -3828,13 +3851,30 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 						const int8_t currentHeater = reprap.GetHeat()->GetChamberHeater();
 						if (currentHeater != -1)
 						{
-							reprap.GetHeat()->SwitchOff(currentHeater);
+							reprap.GetHeat()->SwitchOff(currentHeater);		// Same here. Turn off chamber heater before disabling it
 						}
-
 						reprap.GetHeat()->SetChamberHeater(-1);
+						break;
 					}
 					else if (heater < HEATERS)
 					{
+						// Check if the heater isn't already in use by a tool
+						if (reprap.IsHeaterAssignedToTool(heater))
+						{
+							reply.printf("Heater %d is already in use by a tool!\n", heater);
+							error = true;
+							break;
+						}
+
+						// Then check if the hot bed doesn't already use this one
+						if (reprap.GetHeat()->GetBedHeater() == heater)
+						{
+							reply.printf("Heater %d is already in use by the hot bed!\n", heater);
+							error = true;
+							break;
+						}
+
+						// Set new chamber heater
 						reprap.GetHeat()->SetChamberHeater(heater);
 					}
 					else
@@ -3914,6 +3954,7 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 				{
 					reply.copy("Hot bed is not present!\n");
 					error = true;
+					break;
 				}
 
 				if (!AllMovesAreFinishedAndMoveBufferIsLoaded())
@@ -4261,10 +4302,21 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 				else
 				{
 					char fileBuffer[FILE_BUFFER_SIZE];
-					size_t bytesRead;
-
-					while ((bytesRead = f->Read(fileBuffer, FILE_BUFFER_SIZE)) > 0)
+					size_t bytesRead, bytesLeftForWriting = reprap.GetOutputBytesLeft(configResponse);
+					while ((bytesRead = f->Read(fileBuffer, FILE_BUFFER_SIZE)) > 0 && bytesLeftForWriting > 0)
 					{
+						// Don't write more data than we can process
+						if (bytesRead < bytesLeftForWriting)
+						{
+							bytesLeftForWriting -= bytesRead;
+						}
+						else
+						{
+							bytesRead = bytesLeftForWriting;
+							bytesLeftForWriting = 0;
+						}
+
+						// Write it
 						configResponse->cat(fileBuffer, bytesRead);
 					}
 					f->Close();
