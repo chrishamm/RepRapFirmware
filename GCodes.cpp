@@ -810,16 +810,17 @@ bool GCodes::DoFileMacro(const GCodeBuffer *gb, const char* fileName)
 	{
 		// Rewind back to the position where the last code started so it's called again later
 		fileStack[stackPointer - 1].Seek(lastMacroPosition);
-		lastMacroPosition = 0;
 	}
 	else
 	{
+		// Keep track of which GCodeBuffer initiated this macro file
 		macroSourceGCode = gb;
 	}
 
 	// Set some values so the macro file gets processed properly
 
 	doingFileMacro = true;
+	lastMacroPosition = 0;
 	fileMacroGCode->Init();
 
 	return false;
