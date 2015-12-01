@@ -62,6 +62,7 @@ void GCodes::Init()
 	homeX = false;
 	homeY = false;
 	homeZ = false;
+	settingBedEquationWithProbe = false;
 	offSetSet = false;
 	zProbesSet = false;
 	active = true;
@@ -113,6 +114,7 @@ void GCodes::Reset()
 	fractionOfFilePrinted = -1.0;
 	dwellWaiting = false;
 	stackPointer = 0;
+	lastMacroPosition = 0;
 	waitingForMoveToComplete = false;
 	probeCount = 0;
 	cannedCycleMoveCount = 0;
@@ -317,9 +319,19 @@ void GCodes::Spin()
 
 	if (fileMacroGCode->Active())
 	{
-		// Note the following check: If a new nested macro is started, we must effectively finish the current G-code for now
-		uint8_t lastStackPointer = stackPointer;
-		fileMacroGCode->SetFinished(ActOnCode(fileMacroGCode) || ((stackPointer > lastStackPointer) && (fileStack[lastStackPointer] != fileBeingPrinted)));
+		const uint8_t lastStackPointer = stackPointer;
+		bool finished = ActOnCode(fileMacroGCode);
+		if ((stackPointer > lastStackPointer) && (fileStack[lastStackPointer] != fileBeingPrinted))
+		{
+			// We must finish the current G-Code for now if another nested macro is started
+			finished = true;
+		}
+		else if (fileBeingPrinted.IsLive())
+		{
+			// Else keep track of the file position. We may need it again when another nested macro is started
+			lastMacroPosition = fileBeingPrinted.Position();
+		}
+		fileMacroGCode->SetFinished(finished);
 	}
 	if (httpGCode->Active())
 	{
@@ -792,12 +804,13 @@ bool GCodes::DoFileMacro(const GCodeBuffer *gb, const char* fileName)
 	}
 	fileBeingPrinted.Set(f);
 
-	// Deal with nested macros (rewind back to the position before the last code so it is called again later)
+	// Deal with nested macros
 
 	if (gb == fileMacroGCode)
 	{
-		size_t lastStackPointer = stackPointer - 1;
-		fileStack[lastStackPointer].Seek(fileStack[lastStackPointer].Position() - fileMacroGCode->Length());
+		// Rewind back to the position where the last code started so it's called again later
+		fileStack[stackPointer - 1].Seek(lastMacroPosition);
+		lastMacroPosition = 0;
 	}
 	else
 	{
@@ -1359,7 +1372,14 @@ bool GCodes::SetBedEquationWithProbe(const GCodeBuffer *gb, StringRef& reply)
 	const char *absoluteBedGPath = platform->GetMassStorage()->CombineName(SYS_DIR, BED_EQUATION_G);
 	if (platform->GetMassStorage()->FileExists(absoluteBedGPath))
 	{
-		return DoFileMacro(gb, absoluteBedGPath);
+		if (DoFileMacro(gb, absoluteBedGPath))
+		{
+			settingBedEquationWithProbe = false;
+			return true;
+		}
+
+		settingBedEquationWithProbe = true;
+		return false;
 	}
 
 	if (reprap.GetMove()->NumberOfXYProbePoints() < 3)
@@ -2124,7 +2144,7 @@ void GCodes::HandleReply(GCodeBuffer *gb, bool error, OutputBuffer *reply)
 	if (gb == auxGCode)
 	{
 		// Discard this response if either no aux device is attached or if the response is empty
-		if (!reply->Length() || !HaveAux())
+		if (reply->Length() == 0 || !HaveAux())
 		{
 			while (reply != nullptr)
 			{
@@ -2213,14 +2233,14 @@ void GCodes::HandleReply(GCodeBuffer *gb, bool error, OutputBuffer *reply)
 				return;
 			}
 
-			if (reply->Length() && !DoingFileMacro())
+			if (reply->Length() != 0 && !DoingFileMacro())
 			{
 				platform->Message(type, reply);
 				platform->Message(type, "\n");
 				platform->Message(type, response);
 				platform->Message(type, "\n");
 			}
-			else if (reply->Length())
+			else if (reply->Length() != 0)
 			{
 				platform->Message(type, reply);
 			}
@@ -2647,7 +2667,7 @@ bool GCodes::HandleGcode(GCodeBuffer* gb)
 			break;
 
 		case 32: // Probe Z at multiple positions and generate the bed transform
-			if (!(axisIsHomed[X_AXIS] && axisIsHomed[Y_AXIS]))
+			if (!settingBedEquationWithProbe && !(axisIsHomed[X_AXIS] && axisIsHomed[Y_AXIS]))
 			{
 				// We can only do bed levelling if X and Y have already been homed
 				reply.copy("Must home X and Y before bed probing\n");
@@ -5605,7 +5625,7 @@ bool GCodeBuffer::Put(char c)
 	{
 		inComment = true;
 	}
-	else if (c == '\n' || !c)
+	else if (c == '\n' || c == 0)
 	{
 		gcodeBuffer[gcodePointer] = 0;
 		Init();
@@ -5631,14 +5651,14 @@ bool GCodeBuffer::Put(char c)
 			// Strip out the line number and checksum
 
 			gcodePointer = 0;
-			while (gcodeBuffer[gcodePointer] != ' ' && gcodeBuffer[gcodePointer])
+			while (gcodeBuffer[gcodePointer] != ' ' && gcodeBuffer[gcodePointer] != 0)
 			{
 				gcodePointer++;
 			}
 
 			// Anything there?
 
-			if (!gcodeBuffer[gcodePointer])
+			if (gcodeBuffer[gcodePointer] == 0)
 			{
 				// No...
 				gcodeBuffer[0] = 0;
@@ -5705,19 +5725,6 @@ bool GCodeBuffer::IsEmpty() const
 		buf++;
 	}
 	return *buf == 0;
-}
-
-// How many bytes have been fed into this buffer (including terminating character)
-
-unsigned int GCodeBuffer::Length() const
-{
-	unsigned int length = 0;
-	const char *buf = gcodeBuffer;
-	while (*buf++ != 0)
-	{
-		length++;
-	}
-	return length + 1;
 }
 
 // Is 'c' in the G Code string?

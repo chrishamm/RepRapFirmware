@@ -24,8 +24,8 @@ Licence: GPL
 #define CONFIGURATION_H
 
 #define NAME "RepRapFirmware"
-#define VERSION "1.09n-ch"
-#define DATE "2015-11-26"
+#define VERSION "1.09o-ch"
+#define DATE "2015-12-01"
 
 #define AUTHORS "reprappro, dc42, chrishamm, t3p3, dnewman"
 

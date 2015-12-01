@@ -44,7 +44,6 @@ class GCodeBuffer
 		bool Put(char c);										// Add a character to the end
 		bool Put(const char *str, size_t len);					// Add an entire string
 		bool IsEmpty() const;									// Does this buffer contain any code?
-		unsigned int Length() const;							// How many bytes have been fed into this buffer?
 		bool Seen(char c);										// Is a character present?
 		float GetFValue();										// Get a float after a key letter
 		int GetIValue();										// Get an integer after a key letter
@@ -231,6 +230,7 @@ class GCodes
 		FileData fileStack[STACK];
 		bool doingFileMacroStack[STACK];							// For dealing with Push and Pop
 		uint8_t stackPointer;										// Push and Pop stack pointer
+		FilePosition lastMacroPosition;								// Where did the last macro G-code start?
 		char axisLetters[AXES]; 									// 'X', 'Y', 'Z'
 		float axisScaleFactors[AXES];								// Scale XYZ coordinates by this factor (for Delta configurations)
 		float lastExtruderPosition[DRIVES - AXES];					// Extruder position of the last move fed into the Move class
