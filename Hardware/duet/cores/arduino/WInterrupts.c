@@ -38,25 +38,25 @@ static void __initialize() {
 	pmc_enable_periph_clk(ID_PIOA);
 	NVIC_DisableIRQ(PIOA_IRQn);
 	NVIC_ClearPendingIRQ(PIOA_IRQn);
-	NVIC_SetPriority(PIOA_IRQn, 0);
+	NVIC_SetPriority(PIOA_IRQn, 5);
 	NVIC_EnableIRQ(PIOA_IRQn);
 
 	pmc_enable_periph_clk(ID_PIOB);
 	NVIC_DisableIRQ(PIOB_IRQn);
 	NVIC_ClearPendingIRQ(PIOB_IRQn);
-	NVIC_SetPriority(PIOB_IRQn, 0);
+	NVIC_SetPriority(PIOB_IRQn, 5);
 	NVIC_EnableIRQ(PIOB_IRQn);
 
 	pmc_enable_periph_clk(ID_PIOC);
 	NVIC_DisableIRQ(PIOC_IRQn);
 	NVIC_ClearPendingIRQ(PIOC_IRQn);
-	NVIC_SetPriority(PIOC_IRQn, 0);
+	NVIC_SetPriority(PIOC_IRQn, 5);
 	NVIC_EnableIRQ(PIOC_IRQn);
 
 	pmc_enable_periph_clk(ID_PIOD);
 	NVIC_DisableIRQ(PIOD_IRQn);
 	NVIC_ClearPendingIRQ(PIOD_IRQn);
-	NVIC_SetPriority(PIOD_IRQn, 0);
+	NVIC_SetPriority(PIOD_IRQn, 5);
 	NVIC_EnableIRQ(PIOD_IRQn);
 }
 

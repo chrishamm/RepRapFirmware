@@ -53,6 +53,7 @@ class PID
 	private:
 
 		void SwitchOn();
+		void SetHeater(float power) const;				// power is a fraction in [0,1]
 
 		Platform* platform;								// The instance of the class that is the RepRap hardware
 		float activeTemperature;						// The required active temperature
@@ -80,7 +81,7 @@ class Heat
 		// Enumeration to describe the status of a heater. Note that the web interface returns the numerical values, so don't change them.
 		enum HeaterStatus { HS_off = 0, HS_standby = 1, HS_active = 2, HS_fault = 3 };
 
-		Heat(Platform* p, GCodes* g);
+		Heat(Platform* p);
 		void Spin();												// Called in a tight loop to keep everything going
 		void Init();												// Set everything up
 		void Exit();												// Shut everything down
@@ -111,11 +112,11 @@ class Heat
 		void Diagnostics();											// Output useful information
 
 		float GetAveragePWM(int8_t heater) const;					// Return the running average PWM to the heater. Answer is a fraction in [0, 1].
+		bool UseSlowPwm(int8_t heater) const;						// Queried by the Platform class
 
 	private:
 
 		Platform* platform;							// The instance of the RepRap hardware class
-		GCodes* gCodes;								// The instance of the G Code interpreter class
 
 		bool active;								// Are we active?
 		PID* pids[HEATERS];							// A PID controller for each heater
@@ -360,6 +361,11 @@ inline void Heat::ResetFault(int8_t heater)
 	{
 		pids[heater]->ResetFault();
 	}
+}
+
+inline bool Heat::UseSlowPwm(int8_t heater) const
+{
+	return (heater == bedHeater || heater == chamberHeater);
 }
 
 #endif

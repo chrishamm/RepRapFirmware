@@ -1,3 +1,5 @@
+; homez.g
+; called to home the Z axis
 G91
 G1 Z5 F200
 G90

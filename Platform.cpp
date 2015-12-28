@@ -130,8 +130,8 @@ Platform::Platform() :
 void Platform::Init()
 {
 	// Deal with power first
-	digitalWrite(atxPowerPin, LOW);		// ensure ATX power is off by default
-	pinMode(atxPowerPin, OUTPUT);
+	digitalWrite(ATX_POWER_PIN, LOW);			// ensure ATX power is off by default
+	pinMode(ATX_POWER_PIN, OUTPUT);
 
 	SetBoardType(BoardType::Auto);
 
@@ -169,8 +169,6 @@ void Platform::Init()
 
 	mcpDuet.begin(); //only call begin once in the entire execution, this begins the I2C comms on that channel for all objects
 	mcpExpansion.setMCP4461Address(0x2E); //not required for mcpDuet, as this uses the default address
-	sysDir = SYS_DIR;
-	macroDir = MACRO_DIR;
 	configFile = CONFIG_FILE;
 	defaultFile = DEFAULT_FILE;
 
@@ -213,16 +211,14 @@ void Platform::Init()
 	ARRAY_INIT(activeTemperatures, ACTIVE_TEMPERATURES);
 
 	heatSampleTime = HEAT_SAMPLE_TIME;
-	coolingFan0Value = 0.0;
-	coolingFan1Value = 0.0;
-	coolingFan0Pin = COOLING_FAN0_PIN;
-	coolingFan1Pin = COOLING_FAN1_PIN;
-	coolingFanRpmPin = COOLING_FAN_RPM_PIN;
 	timeToHot = TIME_TO_HOT;
-	lastRpmResetTime = 0.0;
 
-	webDir = WEB_DIR;
+	// Directories
+
 	gcodeDir = GCODE_DIR;
+	macroDir = MACRO_DIR;
+	sysDir = SYS_DIR;
+	webDir = WEB_DIR;
 
 	// Motors
 
@@ -279,20 +275,7 @@ void Platform::Init()
 		thermistorOverheatSums[heater] = (uint32_t) (thermistorOverheatAdcValue + 0.9) * THERMISTOR_AVERAGE_READINGS;
 	}
 
-	if (coolingFan0Pin >= 0)
-	{
-		// Inverse logic for Duet v0.6 and later; this turns it off
-		analogWriteDuet(coolingFan0Pin, (HEAT_ON == 0) ? 255 : 0, true);
-	}
-	if (coolingFan1Pin >= 0)
-	{
-		// Same here
-		analogWriteDuet(coolingFan1Pin, (HEAT_ON == 0) ? 255 : 0, true);
-	}
-	if (coolingFanRpmPin >= 0)
-	{
-		pinModeDuet(coolingFanRpmPin, INPUT_PULLUP, 1500); // enable pullup and 1500Hz debounce filter (500Hz only worked up to 7000RPM)
-	}
+	InitFans();
 
 	// Hotend configuration
 	nozzleDiameter = NOZZLE_DIAMETER;
@@ -727,6 +710,24 @@ void Platform::SetEmulating(Compatibility c)
 	}
 }
 
+void Platform::SetMACAddress(uint8_t mac[])
+{
+	bool changed = false;
+	for (size_t i = 0; i < 6; i++)
+	{
+		if (nvData.macAddress[i] != mac[i])
+		{
+			nvData.macAddress[i] = mac[i];
+			changed = true;
+		}
+	}
+
+	if (changed && autoSaveEnabled)
+	{
+		WriteNvData();
+	}
+}
+
 void Platform::UpdateNetworkAddress(byte dst[4], const byte src[4])
 {
 	bool changed = false;
@@ -837,8 +838,26 @@ void Platform::Spin()
 	ClassReport(longWait);
 }
 
+static void eraseAndReset()
+{
+	cpu_irq_disable();
+	for(size_t i = 0; i <= (IFLASH_LAST_PAGE_ADDRESS - IFLASH_ADDR) / IFLASH_PAGE_SIZE; i++)
+	{
+		size_t pageStartAddr = IFLASH_ADDR + i * IFLASH_PAGE_SIZE;
+		flash_unlock(pageStartAddr, pageStartAddr + IFLASH_PAGE_SIZE - 1, nullptr, nullptr);
+	}
+	flash_clear_gpnvm(1);			// tell the system to boot from ROM next time
+	rstc_start_software_reset(RSTC);
+	for(;;) {}
+}
+
 void Platform::SoftwareReset(uint16_t reason)
 {
+	if (reason == SoftwareResetReason::erase)
+	{
+		eraseAndReset();			// does not return...
+	}
+
 	if (reason != SoftwareResetReason::user)
 	{
 		if (!SerialUSB.canWrite())
@@ -1159,7 +1178,8 @@ void Platform::SetHeaterPwm(size_t heater, uint8_t power)
 {
 	if (heatOnPins[heater] >= 0)
 	{
-		analogWrite(heatOnPins[heater], (HEAT_ON == 0) ? 255 - power : power);
+		uint16_t freq = (reprap.GetHeat()->UseSlowPwm(heater)) ? SLOW_HEATER_PWM_FREQUENCY : NORMAL_HEATER_PWM_FREQUENCY;
+		analogWriteDuet(heatOnPins[heater], (HEAT_ON == 0) ? 255 - power : power, freq);
 	}
 }
 
@@ -1363,57 +1383,32 @@ int Platform::GetPhysicalDrive(size_t driverNumber) const
 // Get current cooling fan speed on a scale between 0 and 1
 float Platform::GetFanValue(size_t fan) const
 {
-	switch (fan)
+	return (fan < NUM_FANS) ? fans[fan].val : -1.0;
+}
+
+bool Platform::GetCoolingInverted(size_t fan) const
+{
+	return (fan < NUM_FANS) ? fans[fan].inverted : false;
+}
+
+void Platform::SetCoolingInverted(size_t fan, bool inv)
+{
+	if (fan < NUM_FANS)
 	{
-		case 0:
-			return coolingFan0Value;
-
-		case 1:
-			return coolingFan1Value;
+		fans[fan].inverted = inv;
 	}
-
-	return -1;
 }
 
 // This is a bit of a compromise - old RepRaps used fan speeds in the range
 // [0, 255], which is very hardware dependent.  It makes much more sense
 // to specify speeds in [0.0, 1.0].  This looks at the value supplied (which
 // the G Code reader will get right for a float or an int) and attempts to
-// do the right thing whichever the user has done.  This will only not work
-// for an old-style fan speed of 1/255...
+// do the right thing whichever the user has done.
 void Platform::SetFanValue(size_t fan, float speed)
 {
-	int8_t fanPin = -1;
-	float *fanValue = nullptr;
-	switch (fan)
+	if (fan < NUM_FANS)
 	{
-		case 0:
-			fanPin = coolingFan0Pin;
-			fanValue = &coolingFan0Value;
-			break;
-
-		case 1:
-			fanPin = coolingFan1Pin;
-			fanValue = &coolingFan1Value;
-			break;
-	}
-
-	if (fanPin >= 0)
-	{
-		byte p;
-		if (speed <= 1.0)
-		{
-			p = (byte)(255.0 * max<float>(0.0, speed));
-			*fanValue = speed;
-		}
-		else
-		{
-			p = (byte)speed;
-			*fanValue = speed / 255.0;
-		}
-
-		// The cooling fan output pin gets inverted if HEAT_ON == 0
-		analogWriteDuet(fanPin, (HEAT_ON == 0) ? (255 - p) : p, true);
+		fans[fan].SetValue(speed);
 	}
 }
 
@@ -1427,6 +1422,78 @@ float Platform::GetFanRPM()
 	return (fanInterval != 0 && micros() - fanLastResetTime < 3000000U)		// if we have a reading and it is less than 3 second old
 			? (float)((30000000U * fanMaxInterruptCount)/fanInterval)		// then calculate RPM assuming 2 interrupts per rev
 			: 0.0;															// else assume fan is off or tacho not connected
+}
+
+void Platform::InitFans()
+{
+	for (size_t i = 0; i < NUM_FANS; ++i)
+	{
+		// The cooling fan 0 output pin gets inverted if HEAT_ON == 0 on a Duet 0.4, 0.6 or 0.7
+		fans[i].Init(COOLING_FAN_PINS[i], (HEAT_ON == 0) && (board != BoardType::Duet_085));
+	}
+	coolingFanRpmPin = COOLING_FAN_RPM_PIN;
+	lastRpmResetTime = 0.0;
+	if (coolingFanRpmPin >= 0)
+	{
+		pinModeDuet(coolingFanRpmPin, INPUT_PULLUP, 1500);					// enable pullup and 1500Hz debounce filter (500Hz only worked up to 7000RPM)
+	}
+}
+
+float Platform::GetFanPwmFrequency(size_t fan) const
+{
+	if (fan < NUM_FANS)
+	{
+		return (float)fans[fan].freq;
+	}
+	return 0.0;
+}
+
+void Platform::SetFanPwmFrequency(size_t fan, float freq)
+{
+	if (fan < NUM_FANS)
+	{
+		fans[fan].SetPwmFrequency(freq);
+	}
+}
+
+void Platform::Fan::Init(Pin p_pin, bool hwInverted)
+{
+	val = 0.0;
+	freq = DEFAULT_FAN_PWM_FREQUENCY;
+	pin = p_pin;
+	hardwareInverted = hwInverted;
+	inverted = false;
+	Refresh();
+}
+
+void Platform::Fan::SetValue(float speed)
+{
+	if (speed > 1.0)
+	{
+		speed /= 255.0;
+	}
+	val = constrain<float>(speed, 0.0, 1.0);
+	Refresh();
+}
+
+void Platform::Fan::Refresh()
+{
+	if (pin >= 0)
+	{
+		uint32_t p = (uint32_t)(255.0 * val);
+		bool invert = hardwareInverted;
+		if (inverted)
+		{
+			invert = !invert;
+		}
+		analogWriteDuet(pin, (invert) ? (255 - p) : p, freq);
+	}
+}
+
+void Platform::Fan::SetPwmFrequency(float p_freq)
+{
+	freq = (uint16_t)max<float>(1.0, min<float>(65535.0, p_freq));
+	Refresh();
 }
 
 //-----------------------------------------------------------------------------------------------------
@@ -1687,12 +1754,12 @@ void Platform::MessageF(MessageType type, const char *fmt, ...)
 
 bool Platform::AtxPower() const
 {
-	return (digitalRead(atxPowerPin) == HIGH);
+	return (digitalRead(ATX_POWER_PIN) == HIGH);
 }
 
 void Platform::SetAtxPower(bool on)
 {
-	digitalWrite(atxPowerPin, (on) ? HIGH : LOW);
+	digitalWrite(ATX_POWER_PIN, (on) ? HIGH : LOW);
 }
 
 void Platform::SetElasticComp(size_t drive, float factor)
@@ -1780,6 +1847,7 @@ void Platform::SetBoardType(BoardType bt)
 	if (active)
 	{
 		InitZProbe();							// select and initialise the Z probe modulation pin
+		InitFans();								// select whether cooling is inverted or not
 	}
 }
 
@@ -1946,7 +2014,8 @@ const char* MassStorage::CombineName(const char* directory, const char* fileName
 	size_t out = 0;
 	size_t in = 0;
 
-	if (directory != nullptr)
+	// DC 2015-11-25 Only prepend the directory if the filename does not have an absolute path
+	if (directory != nullptr && fileName[0] != '/' && (strlen(fileName) < 3 || !isdigit(fileName[0]) || fileName[1] != ':' || fileName[2] != '/'))
 	{
 		while (directory[in] != 0 && directory[in] != '\n')
 		{
@@ -1959,15 +2028,15 @@ const char* MassStorage::CombineName(const char* directory, const char* fileName
 				out = 0;
 			}
 		}
+
+		if (in > 0 && directory[in - 1] != '/' && out < ARRAY_UPB(combinedName))
+		{
+			combinedName[out] = '/';
+			out++;
+		}
+		in = 0;
 	}
 
-	if (in > 0 && directory[in - 1] != '/' && out < ARRAY_UPB(combinedName))
-	{
-		combinedName[out] = '/';
-		out++;
-	}
-
-	in = 0;
 	while (fileName[in] != 0 && fileName[in] != '\n')
 	{
 		combinedName[out] = fileName[in];
@@ -2138,6 +2207,14 @@ bool MassStorage::FileExists(const char *file) const
  	FILINFO fil;
  	fil.lfname = nullptr;
 	return (f_stat(file, &fil) == FR_OK);
+}
+
+bool MassStorage::FileExists(const char *directory, const char *fileName) const
+{
+	const char *location = (directory != nullptr)
+							? platform->GetMassStorage()->CombineName(directory, fileName)
+							: fileName;
+	return FileExists(location);
 }
 
 // Check if the specified directory exists

@@ -80,9 +80,10 @@ class Move
 		void SetCoreXYMode(int mode) { coreXYMode = mode; }
 		bool IsCoreXYAxis(size_t axis) const;											// Returns true if the specified axis shares its motors with another
 
-		void CurrentMoveCompleted();													// Signals that the current move has just been completed
-		bool StartNextMove(uint32_t startTime);											// Start the next move, returning true if Step() needs to be called immediately
-		void MotorTransform(const float machinePos[AXES], int32_t motorPos[AXES]) const;				// Convert Cartesian coordinates to delta motor coordinates
+		void CurrentMoveCompleted();																	// Signals that the current move has just been completed
+		bool StartNextMove(uint32_t startTime);															// Start the next move, returning true if Step() needs to be called immediately
+		void MotorTransform(const float machinePos[AXES], int32_t motorPos[AXES]) const;				// Convert Cartesian coordinates to motor coordinates
+		float MotorFactor(size_t drive, const float directionVector[]) const;							// Calculate the movement fraction for a single axis motor of a Cartesian or CoreXY printer
 		void MachineToEndPoint(const int32_t motorPos[], float machinePos[], size_t numDrives) const;	// Convert motor coordinates to machine coordinates
 		void EndPointToMachine(const float coords[], int32_t ep[], size_t numDrives) const;
 

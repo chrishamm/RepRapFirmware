@@ -632,10 +632,15 @@ void Webserver::HttpInterpreter::SendFile(const char* nameOfFileToSend)
 {
 	NetworkTransaction *transaction = network->GetTransaction();
 
-	if (StringEquals(nameOfFileToSend, "/"))
+	if (nameOfFileToSend[0] == '/')
 	{
-		nameOfFileToSend = INDEX_PAGE_FILE;
+		++nameOfFileToSend;						// all web files are relative to the /www folder, so remove the leading '/'
+		if (nameOfFileToSend[0] == 0)
+		{
+			nameOfFileToSend = INDEX_PAGE_FILE;
+		}
 	}
+
 	FileStore *fileToSend = platform->GetFileStore(platform->GetWebDir(), nameOfFileToSend, false);
 	if (fileToSend == nullptr)
 	{
@@ -2081,18 +2086,7 @@ void Webserver::FtpInterpreter::ProcessLine()
 			else if (StringStartsWith(clientMessage, "DELE"))
 			{
 				ReadFilename(4);
-
-				bool ok;
-				if (filename[0] == '/')
-				{
-					ok = platform->GetMassStorage()->Delete(nullptr, filename);
-				}
-				else
-				{
-					ok = platform->GetMassStorage()->Delete(currentDir, filename);
-				}
-
-				if (ok)
+				if (platform->GetMassStorage()->Delete(currentDir, filename))
 				{
 					SendReply(250, "Delete operation successful.");
 				}
@@ -2105,18 +2099,7 @@ void Webserver::FtpInterpreter::ProcessLine()
 			else if (StringStartsWith(clientMessage, "RMD"))
 			{
 				ReadFilename(3);
-
-				bool ok;
-				if (filename[0] == '/')
-				{
-					ok = platform->GetMassStorage()->Delete(nullptr, filename);
-				}
-				else
-				{
-					ok = platform->GetMassStorage()->Delete(currentDir, filename);
-				}
-
-				if (ok)
+				if (platform->GetMassStorage()->Delete(currentDir, filename))
 				{
 					SendReply(250, "Remove directory operation successful.");
 				}
@@ -2171,29 +2154,14 @@ void Webserver::FtpInterpreter::ProcessLine()
 				oldFilename[FILENAME_LENGTH - 1] = 0;
 				ReadFilename(4);
 
-				// See where this file needs to be moved to
-				if (filename[0] == '/')
+				const char *newFilename = platform->GetMassStorage()->CombineName(currentDir, filename);
+				if (platform->GetMassStorage()->Rename(oldFilename, newFilename))
 				{
-					if (platform->GetMassStorage()->Rename(oldFilename, filename))
-					{
-						SendReply(250, "Rename successful.");
-					}
-					else
-					{
-						SendReply(550, "Could not rename file or directory.");
-					}
+					SendReply(250, "Rename successful.");
 				}
 				else
 				{
-					const char *newFilename = platform->GetMassStorage()->CombineName(currentDir, filename);
-					if (platform->GetMassStorage()->Rename(oldFilename, newFilename))
-					{
-						SendReply(250, "Rename successful.");
-					}
-					else
-					{
-						SendReply(500, "Could not rename file or directory.");
-					}
+					SendReply(500, "Could not rename file or directory.");
 				}
 			}
 			// no op
@@ -2280,18 +2248,9 @@ void Webserver::FtpInterpreter::ProcessLine()
 			// upload a file
 			else if (StringStartsWith(clientMessage, "STOR"))
 			{
-				FileStore *file;
-
 				ReadFilename(4);
-				if (filename[0] == '/')
-				{
-					file = platform->GetFileStore(nullptr, filename, true);
-				}
-				else
-				{
-					file = platform->GetFileStore(currentDir, filename, true);
-				}
 
+				FileStore *file = platform->GetFileStore(currentDir, filename, true);
 				if (StartUpload(file))
 				{
 					strncpy(filenameBeingUploaded, filename, ARRAY_SIZE(filenameBeingUploaded));
@@ -2310,37 +2269,29 @@ void Webserver::FtpInterpreter::ProcessLine()
 			// download a file
 			else if (StringStartsWith(clientMessage, "RETR"))
 			{
-				FileStore *fs;
-
 				ReadFilename(4);
-				if (filename[0] == '/')
-				{
-					fs = platform->GetFileStore(nullptr, filename, false);
-				}
-				else
-				{
-					fs = platform->GetFileStore(currentDir, filename, false);
-				}
 
-				if (fs == nullptr)
+				FileStore *file = platform->GetFileStore(currentDir, filename, false);
+				if (file == nullptr)
 				{
 					SendReply(550, "Failed to open file.");
 				}
 				else
 				{
-					snprintf(ftpResponse, ftpResponseLength, "Opening data connection for %s (%lu bytes).", filename, fs->Length());
+					snprintf(ftpResponse, ftpResponseLength, "Opening data connection for %s (%lu bytes).", filename, file->Length());
 					SendReply(150, ftpResponse);
 
 					if (network->AcquireDataTransaction())
 					{
 						// send the file via data port
 						NetworkTransaction *dataTransaction = network->GetTransaction();
-						dataTransaction->SetFileToWrite(fs);
+						dataTransaction->SetFileToWrite(file);
 						dataTransaction->Commit(false);
 						state = doingPasvIO;
 					}
 					else
 					{
+						file->Close();
 						SendReply(500, "Unknown error.");
 						network->CloseDataPort();
 						state = authenticated;

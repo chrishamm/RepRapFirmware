@@ -266,7 +266,7 @@ void Tool::Standby()
 	active = false;
 }
 
-void Tool::SetVariables(float* standby, float* active)
+void Tool::SetVariables(const float* standby, const float* active)
 {
 	bool toolActive = (reprap.GetCurrentTool() == this);
 

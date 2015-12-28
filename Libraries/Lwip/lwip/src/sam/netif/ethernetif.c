@@ -250,8 +250,8 @@ void ethernet_hardware_init(void)
 		emac_dev_init(EMAC, &gs_emac_dev, &emac_option);
 	}
 
-	/* Set lower priority */
-	NVIC_SetPriority(EMAC_IRQn, 12);
+	/* Set IRQ priority */
+	NVIC_SetPriority(EMAC_IRQn, 4);
 
 	/* Enable Interrupt */
 	NVIC_EnableIRQ(EMAC_IRQn);

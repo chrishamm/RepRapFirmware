@@ -24,8 +24,8 @@ Licence: GPL
 #define CONFIGURATION_H
 
 #define NAME "RepRapFirmware"
-#define VERSION "1.09o-ch"
-#define DATE "2015-12-01"
+#define VERSION "1.09p-ch"
+#define DATE "2015-12-13"
 
 #define AUTHORS "reprappro, dc42, chrishamm, t3p3, dnewman"
 
@@ -71,6 +71,10 @@ static const float TIME_TO_HOT = 150.0;						// Seconds
 static const uint8_t MAX_BAD_TEMPERATURE_COUNT = 6;			// Number of bad temperature samples before a heater fault is reported
 static const float BAD_LOW_TEMPERATURE = -10.0;				// Celsius
 static const float BAD_HIGH_TEMPERATURE = 300.0;			// Celsius
+
+static const unsigned int SLOW_HEATER_PWM_FREQUENCY = 10;	// Hz
+static const unsigned int NORMAL_HEATER_PWM_FREQUENCY = 500;// Hz
+static const unsigned int DEFAULT_FAN_PWM_FREQUENCY = 500;	// Hz (increase to 25kHz for 4-wire PWM fans)
 
 // Default Z probe values
 

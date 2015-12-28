@@ -50,8 +50,8 @@ class GCodeBuffer
 		long GetLValue();										// Get a long integer after a key letter
 		const char* GetUnprecedentedString(bool optional = false);	// Get a string with no preceding key letter
 		const char* GetString();								// Get a string after a key letter
-		const void GetFloatArray(float a[], int& length);		// Get a :-separated list of floats after a key letter
-		const void GetLongArray(long l[], int& length);			// Get a :-separated list of longs after a key letter
+		const void GetFloatArray(float a[], size_t& length);	// Get a :-separated list of floats after a key letter
+		const void GetLongArray(long l[], size_t& length);		// Get a :-separated list of longs after a key letter
 		const char* Buffer() const;								// What G-Code has been fed into this buffer?
 		bool Active() const;									// Is this G-Code buffer still being acted upon?
 		void SetFinished(bool f);								// Set the G Code executed (or not)
@@ -144,7 +144,6 @@ class GCodes
 		bool AllAxesAreHomed() const;								// Return true if all axes are homed
 		bool GetAxisIsHomed(size_t axis) const;						// Is the axis at 0?
 		void SetAxisIsHomed(size_t axis);							// Tell us that the axis is now homes
-		bool CoolingInverted() const;								// Is the current fan value inverted?
 		void MoveQueued();											// Announce a new move to be executed
 		void MoveCompleted();										// Indicate that a move has been completed (called by ISR)
 		bool HaveAux() const;										// Any device on the AUX line?
@@ -199,7 +198,7 @@ class GCodes
 		void SetHeaterParameters(GCodeBuffer *gb, StringRef& reply);	// Set the thermistor and ADC parameters for a heater
 		void ManageTool(GCodeBuffer *gb, StringRef& reply);			// Create a new tool definition
 		void SetToolHeaters(Tool *tool, float temperature);			// Set all a tool's heaters to the temperature.  For M104...
-		bool ChangeTool(const GCodeBuffer *gb, int newToolNumber);	// Select a new tool
+		bool ChangeTool(GCodeBuffer *gb, int newToolNumber);		// Select a new tool
 		bool ToolHeatersAtSetTemperatures(const Tool *tool) const;	// Wait for the heaters associated with the specified tool to reach their set temperatures
 		void SetAllAxesNotHomed();									// Flag all axes as not homed
 
@@ -261,7 +260,6 @@ class GCodes
 		bool limitAxes;												// Don't think outside the box.
 		bool axisIsHomed[AXES];										// These record which of the axes have been homed
 		bool waitingForMoveToComplete;
-		bool coolingInverted;
 		float lastFan0Value, lastFan1Value;
 		float lastProbedZ;											// The last height at which the Z probe stopped
 		int8_t toolChangeSequence;									// Steps through the tool change procedure
@@ -379,12 +377,6 @@ inline bool GCodes::NoHome() const
 inline size_t GCodes::GetStackPointer() const
 {
 	return stackPointer;
-}
-
-//@TODO T3P3 cooling inverted applies for both PWM fans
-inline bool GCodes::CoolingInverted() const
-{
-	return coolingInverted;
 }
 
 inline OutputBuffer *GCodes::GetAuxGCodeReply()

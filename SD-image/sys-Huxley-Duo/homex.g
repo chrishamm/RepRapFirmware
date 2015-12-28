@@ -1,3 +1,5 @@
+; homex.g
+; called to home the X axis
 G91
 G1 Z5 F200
 G90

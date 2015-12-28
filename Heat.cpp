@@ -22,8 +22,7 @@ Licence: GPL
 
 const float invHeatPwmAverageCount = HEAT_SAMPLE_TIME/HEAT_PWM_AVERAGE_TIME;
 
-Heat::Heat(Platform* p, GCodes* g) : platform(p), gCodes(g), active(false), coldExtrude(false),
-	bedHeater(HOT_BED_HEATER), chamberHeater(-1)
+Heat::Heat(Platform* p) : platform(p), active(false), coldExtrude(false), bedHeater(BED_HEATER), chamberHeater(-1)
 {
 	for(size_t heater=0; heater < HEATERS; heater++)
 	{
@@ -55,14 +54,20 @@ void Heat::Exit()
 void Heat::Spin()
 {
 	if (!active)
+	{
+		platform->ClassReport(longWait);
 		return;
+	}
 
 	float t = platform->Time();
 	if (t - lastTime < platform->HeatSampleTime())
+	{
+		platform->ClassReport(longWait);
 		return;
+	}
 
 	lastTime = t;
-	for(size_t heater=0; heater < HEATERS; heater++)
+	for(size_t heater = 0; heater < HEATERS; heater++)
 	{
 		pids[heater]->Spin();
 	}
@@ -72,7 +77,7 @@ void Heat::Spin()
 void Heat::Diagnostics() 
 {
 	platform->Message(GENERIC_MESSAGE, "Heat Diagnostics:\n");
-	for(size_t heater=0; heater < HEATERS; heater++)
+	for(size_t heater = 0; heater < HEATERS; heater++)
 	{
 		if (pids[heater]->active)
 		{
@@ -88,7 +93,7 @@ bool Heat::AllHeatersAtSetTemperatures(bool includingBed) const
 
 	for(size_t heater = firstHeater; heater < HEATERS; heater++)
 	{
-		if(!HeaterAtSetTemperature(heater))
+		if (!HeaterAtSetTemperature(heater))
 		{
 			return false;
 		}
@@ -112,15 +117,13 @@ bool Heat::HeaterAtSetTemperature(int8_t heater) const
 
 //******************************************************************************************************
 
-PID::PID(Platform* p, int8_t h)
+PID::PID(Platform* p, int8_t h) : platform(p), heater(h)
 {
-	platform = p;
-	heater = h;
 }
 
 void PID::Init()
 {
-	platform->SetHeater(heater, 0.0);
+	SetHeater(0.0);
 	temperature = platform->GetTemperature(heater);
 	activeTemperature = ABS_ZERO;
 	standbyTemperature = ABS_ZERO;
@@ -136,11 +139,16 @@ void PID::Init()
 
 void PID::SwitchOn()
 {
-//	if(reprap.Debug())
-//	{
-//		platform->MessageF(BOTH_MESSAGE, "Heater %d switched on.\n", heater);
-//	}
+	if(reprap.Debug(Module::moduleHeat))
+	{
+		platform->MessageF(GENERIC_MESSAGE, "Heater %d switched on.\n", heater);
+	}
 	switchedOff = temperatureFault;
+}
+
+void PID::SetHeater(float power) const
+{
+	platform->SetHeater(heater, power);
 }
 
 void PID::Spin()
@@ -157,7 +165,7 @@ void PID::Spin()
 
 	if (temperatureFault || switchedOff)
 	{
-		platform->SetHeater(heater, 0.0); // Make sure...
+		SetHeater(0.0); // Make sure to turn it off...
 		averagePWM *= (1.0 - invHeatPwmAverageCount);
 		return;
 	}
@@ -170,9 +178,8 @@ void PID::Spin()
 		badTemperatureCount++;
 		if (badTemperatureCount > MAX_BAD_TEMPERATURE_COUNT)
 		{
-			platform->SetHeater(heater, 0.0);
+			SetHeater(0.0);
 			temperatureFault = true;
-//			switchedOff = true;
 			platform->MessageF(GENERIC_MESSAGE, "Temperature fault on heater %d, T = %.1f\n", heater, temperature);
 			reprap.FlagTemperatureFault(heater);
 		}
@@ -193,9 +200,8 @@ void PID::Spin()
 			float limit = platform->TimeToHot();
 			if (tim > platform->TimeToHot() && limit > 0.0)
 			{
-				platform->SetHeater(heater, 0.0);
+				SetHeater(0.0);
 				temperatureFault = true;
-//				switchedOff = true;
 				platform->MessageF(GENERIC_MESSAGE, "Heating fault on heater %d, T = %.1f C; still not at temperature %.1f after %f seconds.\n",heater, temperature, tmp, tim);
 				reprap.FlagTemperatureFault(heater);
 			}
@@ -212,15 +218,15 @@ void PID::Spin()
 
 	if (!pp.UsePID())
 	{
-		platform->SetHeater(heater, (error > 0.0) ? pp.kS : 0.0);
+		SetHeater((error > 0.0) ? pp.kS : 0.0);
 		if(error > 0.0)
 		{
-			platform->SetHeater(heater, pp.kS);
+			SetHeater(pp.kS);
 			averagePWM = averagePWM * (1.0 - invHeatPwmAverageCount) + pp.kS;
 		}
 		else
 		{
-			platform->SetHeater(heater, 0.0);
+			SetHeater(0.0);
 			averagePWM *= (1.0 - invHeatPwmAverageCount);
 		}
 		return;
@@ -230,7 +236,7 @@ void PID::Spin()
 	{
 		// actual temperature is well above target
 		temp_iState = (targetTemperature + pp.fullBand - 25.0) * pp.kT;	// set the I term to our estimate of what will be needed ready for the switch to PID
-		platform->SetHeater(heater, 0.0);
+		SetHeater(0.0);
 		averagePWM *= (1.0 - invHeatPwmAverageCount);
 		lastTemperature = temperature;
 		return;
@@ -239,7 +245,7 @@ void PID::Spin()
 	{
 		// actual temperature is well below target
 		temp_iState = (targetTemperature - pp.fullBand - 25.0) * pp.kT;	// set the I term to our estimate of what will be needed ready for the switch to PID
-		platform->SetHeater(heater, pp.kS);
+		SetHeater(pp.kS);
 		averagePWM *= (1.0 - invHeatPwmAverageCount) + pp.kS;
 		lastTemperature = temperature;
 		return;
@@ -277,7 +283,7 @@ void PID::Spin()
 
 	if (!temperatureFault)
 	{
-		platform->SetHeater(heater, result * pp.kS);
+		SetHeater(result * pp.kS);
 	}
 
 	averagePWM = averagePWM * (1.0 - invHeatPwmAverageCount) + result;
@@ -290,5 +296,4 @@ float PID::GetAveragePWM() const
 }
 
 // End
-
 // vim: ts=4:sw=4

@@ -59,6 +59,8 @@ Licence: GPL
 
 /**************************************************************************************************/
 
+typedef int8_t Pin;										// Type used to represent a pin number, negative means no pin
+
 // Hardware-dependent timing
 
 static const float TIME_TO_REPRAP = 1.0e6;				// Convert seconds to the units used by the machine (usually microseconds)
@@ -68,7 +70,7 @@ static const float TIME_FROM_REPRAP = 1.0e-6;			// Convert the units used by the
 
 static const size_t DRIVES = 9;							// The number of drives in the machine, including X, Y, and Z plus extruder drives
 static const size_t AXES = 3;							// The number of movement axes in the machine, usually just X, Y and Z. <= DRIVES
-static const int8_t HEATERS = 7;						// The number of heaters in the machine; 0 is the heated bed even if there isn't one
+static const int HEATERS = 7;							// The number of heaters in the machine; 0 is the heated bed even if there isn't one
 static const size_t NUM_SERIAL_CHANNELS = 3;			// The number of serial IO channels (USB and two auxiliary UARTs)
 
 // The numbers of entries in each array must correspond with the values of DRIVES,
@@ -77,14 +79,14 @@ static const size_t NUM_SERIAL_CHANNELS = 3;			// The number of serial IO channe
 
 // DRIVES
 
-static const int8_t ENABLE_PINS[DRIVES] = { 29, 27, X1, X0, 37, X8, 50, 47, X13 };
+static const Pin ENABLE_PINS[DRIVES] = { 29, 27, X1, X0, 37, X8, 50, 47, X13 };
 static const bool ENABLE_VALUES[DRIVES] = { false, false, false, false, false, false, false, false, false };	// what to send to enable a drive
-static const int8_t STEP_PINS[DRIVES] = { 14, 25, 5, X2, 41, 39, X4, 49, X10 };
-static const int8_t DIRECTION_PINS[DRIVES] = { 15, 26, 4, X3, 35, 53, 51, 48, X11 };
+static const Pin STEP_PINS[DRIVES] = { 14, 25, 5, X2, 41, 39, X4, 49, X10 };
+static const Pin DIRECTION_PINS[DRIVES] = { 15, 26, 4, X3, 35, 53, 51, 48, X11 };
 
 static const float DEFAULT_IDLE_CURRENT_FACTOR = 0.3;	// Proportion of normal motor current that we use for idle hold
 
-static const int8_t END_STOP_PINS[DRIVES] = { 11, 28, 60, 31, 24, 46, 45, 44, X9 };
+static const Pin END_STOP_PINS[DRIVES] = { 11, 28, 60, 31, 24, 46, 45, 44, X9 };
 static const int ENDSTOP_HIT = HIGH;
 
 static const bool FORWARDS = true;
@@ -124,8 +126,8 @@ static const float DEFAULT_DELTA_HOMED_HEIGHT = 200.0;						// mm
 
 static const bool HEAT_ON = false;											// false for inverted heater (eg Duet v0.6), true for not (e.g. Duet v0.4)
 
-static const int8_t TEMP_SENSE_PINS[HEATERS] = { 5, 4, 0, 7, 8, 9, 11 };	// Analogue pin numbers
-static const int8_t HEAT_ON_PINS[HEATERS] = { 6, X5, X7, 7, 8, 9, -1 };		// Heater Channel 7 (pin X17) is shared with Fan1. Only define 1 or the other
+static const Pin TEMP_SENSE_PINS[HEATERS] = { 5, 4, 0, 7, 8, 9, 11 };	// Analogue pin numbers
+static const Pin HEAT_ON_PINS[HEATERS] = { 6, X5, X7, 7, 8, 9, -1 };		// Heater Channel 7 (pin X17) is shared with Fan1. Only define 1 or the other
 
 // Bed thermistor: http://uk.farnell.com/epcos/b57863s103f040/sensor-miniature-ntc-10k/dp/1299930?Ntt=129-9930
 // Hot end thermistor: http://www.digikey.co.uk/product-search/en?x=20&y=11&KeyWords=480-3137-ND
@@ -137,22 +139,20 @@ static const float DEFAULT_THERMISTOR_25_RS[HEATERS] = { 10000.0, 100000.0, 1000
 // The system is highly nonlinear because the heater power is limited to a maximum value and cannot go negative.
 // If we try to run a traditional PID when there are large temperature errors, this causes the I-accumulator to go out of control,
 // which causes a large amount of overshoot at lower temperatures. There are at least two ways of avoiding this:
+//
 // 1. Allow the PID to operate even with very large errors, but choose a very small I-term, just the right amount so that when heating up
 //    from cold, the I-accumulator is approximately the value needed to maintain the correct power when the target temperature is reached.
 //    This works well most of the time. However if the Duet board is reset when the extruder is hot and is then
 //    commanded to heat up again before the extruder has cooled, the I-accumulator doesn't grow large enough, so the
 //    temperature undershoots. The small value of the I-term then causes it to take a long time to reach the correct temperature.
+//
 // 2. Only allow the PID to operate when the temperature error is small enough for the PID to operate in the linear region.
 //    So we set FULL_PID_BAND to a small value. It needs to be at least 15C because that is how much the temperature overshoots by
-//    when we turn the heater off from full power at about 180C. We set the I-accumulator to zero when the PID is off, and use a
-//    much larger I-term. So the I-accumulator grows from zero to the value needed to maintain the required temperature
-//    much faster, but not so fast as to cause too much overshoot. This works well most of the time, except when we reduce
-//    the temperature by more than FULL_PID_BAND. In this case we turn off the PID and the heater, clear the
-//    I-accumulator, and wait for the temperature to drop before we turn the PID on again. The temperature has to undershoot by 10C
-//    or more in order for the I-accumulator to build up again. However, dropping the temperature by more then 20C is not a normal
-//    operation for a 3D printer, so we don't worry about this case.
-// An improvement on method (2) would be to preset the I-accumulator to an estimate of the value needed to maintain the
-// target temperature when we start using the PID (instead of clearing it to zero), and then reduce the I-term a little.
+//    on an Ormerod when we turn the heater off from full power at about 180C. When we transition to PID, we set the I-term to the
+//    value we expect to be needed to maintain the target temperature. We use an additional T parameter to allow this value to be
+//    estimated.
+//
+// The default values use method (2).
 //
 // Note: a negative P, I or D value means do not use PID for this heater, use bang-bang control instead.
 // This allows us to switch between PID and bang-bang using the M301 and M304 commands.
@@ -170,7 +170,7 @@ const float DEFAULT_PID_MAXES[HEATERS] = { 255.0, 180.0, 180.0, 180.0, 180.0, 18
 static const float STANDBY_TEMPERATURES[HEATERS] = { ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO }; // We specify one for the bed, though it's not needed
 static const float ACTIVE_TEMPERATURES[HEATERS] = { ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO };
 
-static const int8_t HOT_BED_HEATER = 0;					// Index of the heated bed
+static const int8_t BED_HEATER = 0;						// Index of the heated bed
 static const int8_t E0_HEATER = 1;						// Index of the first extruder heater
 static const int8_t E1_HEATER = 2;						// Index of the second extruder heater
 static const int8_t E2_HEATER = 3;						// Index of the third extruder heater
@@ -178,14 +178,11 @@ static const int8_t E3_HEATER = 4;						// Index of the fourth extruder heater
 static const int8_t E4_HEATER = 5;						// Index of the fifth extruder heater
 static const int8_t E5_HEATER = 6;						// Index of the sixth extruder heater
 
-
 // COOLING FAN
 
-static const int8_t COOLING_FAN0_PIN = X6;				// Pin D34 is PWM capable but not an Arduino PWM pin - use X6 instead
-static const int8_t COOLING_FAN1_PIN = X17;
-static const int8_t COOLING_FAN_RPM_PIN = 23;			// Pin PA15
-static const float COOLING_FAN_RPM_SAMPLE_TIME = 2.0;	// Seconds
-
+static const size_t NUM_FANS = 2;
+static const Pin COOLING_FAN_PINS[NUM_FANS] = { X6, X17 };
+static const Pin COOLING_FAN_RPM_PIN = 23;
 
 // AD CONVERSION
 
@@ -193,8 +190,8 @@ static const float COOLING_FAN_RPM_SAMPLE_TIME = 2.0;	// Seconds
 static const unsigned int AD_OVERSAMPLE_BITS = 1;		// Number of bits we oversample when reading temperatures
 
 // Define the number of temperature readings we average for each thermistor. This should be a power of 2 and at least 4 ** AD_OVERSAMPLE_BITS.
-// Keep THERMISTOR_AVERAGE_READINGS * NUM_HEATERS * 2ms no greater than HEAT_SAMPLE_TIME or the PIDs won't work well.
-static const unsigned int THERMISTOR_AVERAGE_READINGS = (HEATERS > 3) ? 32 : 64;
+// Keep THERMISTOR_AVERAGE_READINGS * HEATERS * 2ms no greater than HEAT_SAMPLE_TIME or the PIDs won't work well.
+static const unsigned int THERMISTOR_AVERAGE_READINGS = 32;
 static const unsigned int AD_RANGE_REAL = 4095;													// The ADC that measures temperatures gives an int this big as its max value
 static const unsigned int AD_RANGE_VIRTUAL = ((AD_RANGE_REAL + 1) << AD_OVERSAMPLE_BITS) - 1;	// The max value we can get using oversampling
 static const unsigned int AD_DISCONNECTED_REAL = AD_RANGE_REAL - 3;								// We consider an ADC reading at/above this value to indicate that the thermistor is disconnected
@@ -205,9 +202,9 @@ static const unsigned int AD_DISCONNECTED_VIRTUAL = AD_DISCONNECTED_REAL << AD_O
 
 static const int Z_PROBE_AD_VALUE = 400;						// Default for the Z probe - should be overwritten by experiment
 static const float Z_PROBE_STOP_HEIGHT = 0.7;					// Millimetres
-static const int8_t Z_PROBE_PIN = 10;							// Analogue pin number
-static const int8_t Z_PROBE_MOD_PIN = 52;						// Digital pin number to turn the IR LED on (high) or off (low) on Duet v0.6 and v1.0 (PB21)
-static const int8_t Z_PROBE_MOD_PIN07 = X12;					// Digital pin number to turn the IR LED on (high) or off (low) on Duet v0.7 and v0.8.5 (PC10)
+static const Pin Z_PROBE_PIN = 10;								// Analogue pin number
+static const Pin Z_PROBE_MOD_PIN = 52;							// Digital pin number to turn the IR LED on (high) or off (low) on Duet v0.6 and v1.0 (PB21)
+static const Pin Z_PROBE_MOD_PIN07 = X12;						// Digital pin number to turn the IR LED on (high) or off (low) on Duet v0.7 and v0.8.5 (PC10)
 static const bool Z_PROBE_AXES[AXES] = { true, false, true };	// Axes for which the Z-probe is normally used
 static const unsigned int Z_PROBE_AVERAGE_READINGS = 8;			// We average this number of readings with IR on, and the same number with IR off
 
@@ -219,11 +216,11 @@ static const int INKJET_DELAY_MICROSECONDS = 800;				// How long to wait before 
 
 // Inkjet control pins
 
-static const int8_t INKJET_SERIAL_OUT = 65;						// Serial bitpattern into the shift register
-static const int8_t INKJET_SHIFT_CLOCK = 20;					// Shift the register
-static const int8_t INKJET_STORAGE_CLOCK = 67;					// Put the pattern in the output register
-static const int8_t INKJET_OUTPUT_ENABLE = 66;					// Make the output visible
-static const int8_t INKJET_CLEAR = 36;							// Clear the register to 0
+static const Pin INKJET_SERIAL_OUT = 65;						// Serial bitpattern into the shift register
+static const Pin INKJET_SHIFT_CLOCK = 20;						// Shift the register
+static const Pin INKJET_STORAGE_CLOCK = 67;						// Put the pattern in the output register
+static const Pin INKJET_OUTPUT_ENABLE = 66;						// Make the output visible
+static const Pin INKJET_CLEAR = 36;								// Clear the register to 0
 
 /****************************************************************************************************/
 
@@ -250,7 +247,7 @@ const unsigned int USB_BAUD_RATE = 115200;		// Default communication speed of th
 const unsigned int AUX_BAUD_RATE = 57600;		// Ditto - for auxiliary UART device
 const unsigned int AUX2_BAUD_RATE = 115200;		// Ditto - for second auxiliary UART device
 
-const int8_t atxPowerPin = 12;					// Arduino Due pin number that controls the ATX power on/off
+const Pin ATX_POWER_PIN = 12;					// Arduino Due pin number that controls the ATX power on/off
 
 /***************************************************************************************************/
 
@@ -261,6 +258,7 @@ namespace SoftwareResetReason
 	enum
 	{
 		user = 0,								// M999 command
+		erase = 55,								// Special M999 command to erase firmware and reset
 		inAuxOutput = 0x0800,					// This bit is or'ed in if we were in aux output at the time
 		stuckInSpin = 0x1000,					// We got stuck in a Spin() function for too long
 		inLwipSpin = 0x2000,					// We got stuck in a call to LWIP for too long
@@ -305,6 +303,7 @@ class MassStorage
 		bool MakeDirectory(const char *directory);
 		bool Rename(const char *oldFilename, const char *newFilename);
 		bool FileExists(const char *file) const;
+		bool FileExists(const char* directory, const char *fileName) const;
 		bool DirectoryExists(const char *path) const;
 		bool DirectoryExists(const char* directory, const char* subDirectory);
 
@@ -749,9 +748,6 @@ class Platform
 		void SetHeater(size_t heater, float power);		// power is a fraction in [0,1]
 		float HeatSampleTime() const;
 		void SetHeatSampleTime(float st);
-		float GetFanValue(size_t fan) const;			// Result is returned in per cent
-		void SetFanValue(size_t fan, float speed);		// Accepts values between 0..1 and 1..255
-		float GetFanRPM();
 		void SetPidParameters(size_t heater, const PidParameters& params);
 		const PidParameters& GetPidParameters(size_t heater) const;
 		float TimeToHot() const;
@@ -759,7 +755,18 @@ class Platform
 		void SetThermistorNumber(size_t heater, size_t thermistor);
 		int GetThermistorNumber(size_t heater) const;
 
+		// Fans
+
+		float GetFanValue(size_t fan) const;			// Result is returned in per cent
+		void SetFanValue(size_t fan, float speed);		// Accepts values between 0..1 and 1..255
+		bool GetCoolingInverted(size_t fan) const;
+		void SetCoolingInverted(size_t fan, bool inv);
+		float GetFanPwmFrequency(size_t fan) const;
+		void SetFanPwmFrequency(size_t fan, float freq);
+		float GetFanRPM();
+
 		// Flash operations
+
 		void ResetNvData();
 		void ReadNvData();
 		void WriteNvData();
@@ -804,6 +811,20 @@ class Platform
 			uint16_t magic;
 			uint16_t resetReason;						// this records why we did a software reset, for diagnostic purposes
 			size_t neverUsedRam;						// the amount of never used RAM at the last abnormal software reset
+		};
+
+		struct Fan
+		{
+			float val;
+			uint16_t freq;
+			Pin pin;
+			bool inverted;
+			bool hardwareInverted;
+
+			void Init(Pin p_pin, bool hwInverted);
+			void SetValue(float speed);
+			void SetPwmFrequency(float p_freq);
+			void Refresh();
 		};
 
 		struct FlashData
@@ -853,15 +874,15 @@ class Platform
 		void UpdateMotorCurrent(size_t drive);
 
 		// Note that
-		int8_t stepPins[DRIVES];					// the Arduino pin numbers for the stepper pins
+		Pin stepPins[DRIVES];						// the Arduino pin numbers for the stepper pins
 		OutputPin stepPinDescriptors[DRIVES];		// output pin descriptors for faster access, with the driver number mapping already done
-		int8_t directionPins[DRIVES];
-		int8_t enablePins[DRIVES];
+		Pin directionPins[DRIVES];
+		Pin enablePins[DRIVES];
 		volatile DriveStatus driveState[DRIVES];
 		bool directions[DRIVES];
 		bool enableValues[DRIVES];
-		int8_t endStopPins[DRIVES];
-		int8_t driverNumbers[DRIVES];
+		Pin endStopPins[DRIVES];
+		Pin driverNumbers[DRIVES];
 		float maxFeedrates[DRIVES];
 		float accelerations[DRIVES];
 		float driveStepsPerUnit[DRIVES];
@@ -880,8 +901,8 @@ class Platform
 
 		// Z-Probe
 
-		int8_t zProbePin;
-		int8_t zProbeModulationPin;
+		Pin zProbePin;
+		Pin zProbeModulationPin;
 
 		volatile ZProbeAveragingFilter zProbeOnFilter;					// Z probe readings we took with the IR turned on
 		volatile ZProbeAveragingFilter zProbeOffFilter;					// Z probe readings we took with the IR turned off
@@ -889,7 +910,7 @@ class Platform
 
 		float extrusionAncilliaryPWM;
 
-		// AXES
+		// Axes and endstops
 
 		void InitZProbe();
 		void UpdateNetworkAddress(byte dst[4], const byte src[4]);
@@ -899,21 +920,24 @@ class Platform
 		EndStopType endStopType[AXES+1];
 		bool endStopLogicLevel[AXES+1];
 
-		// HEATERS - Bed is assumed to be the first
+		// Heaters
 
 		int GetRawTemperature(size_t heater) const;
 		void SetHeaterPwm(size_t heater, uint8_t pwm);
 
-		int8_t tempSensePins[HEATERS];
-		int8_t heatOnPins[HEATERS];
+		Pin tempSensePins[HEATERS];
+		Pin heatOnPins[HEATERS];
 		float heatSampleTime;
 		float standbyTemperatures[HEATERS];
 		float activeTemperatures[HEATERS];
-		float coolingFan0Value, coolingFan1Value;
-		int8_t coolingFan0Pin, coolingFan1Pin;
-		int8_t coolingFanRpmPin;
 		float timeToHot;
+
+		// Fans
+
+		Fan fans[NUM_FANS];
+		Pin coolingFanRpmPin;											// We currently support only one fan RPM input
 		float lastRpmResetTime;
+		void InitFans();
 
 		// Serial/USB
 
@@ -942,7 +966,7 @@ class Platform
 		uint32_t thermistorOverheatSums[HEATERS];
 		uint8_t tickState;
 		int currentZProbeType;
-		uint8_t currentHeater;
+		size_t currentHeater;
 		int debugCode;
 
 		static uint16_t GetAdcReading(adc_channel_num_t chan);
@@ -958,11 +982,11 @@ class Platform
 		int8_t inkjetBits;
 		int inkjetFireMicroseconds;
 		int inkjetDelayMicroseconds;
-		int8_t inkjetSerialOut;
-		int8_t inkjetShiftClock;
-		int8_t inkjetStorageClock;
-		int8_t inkjetOutputEnable;
-		int8_t inkjetClear;
+		Pin inkjetSerialOut;
+		Pin inkjetShiftClock;
+		Pin inkjetStorageClock;
+		Pin inkjetOutputEnable;
+		Pin inkjetClear;
 };
 
 // Small class to hold an open file and data relating to it.
@@ -1331,24 +1355,6 @@ inline const unsigned char* Platform::NetMask() const
 inline const unsigned char* Platform::GateWay() const
 {
 	return nvData.gateWay;
-}
-
-inline void Platform::SetMACAddress(uint8_t mac[])
-{
-	bool changed = false;
-	for(size_t i = 0; i < 6; i++)
-	{
-		if (nvData.macAddress[i] != mac[i])
-		{
-			nvData.macAddress[i] = mac[i];
-			changed = true;
-		}
-	}
-
-	if (changed && autoSaveEnabled)
-	{
-		WriteNvData();
-	}
 }
 
 inline const unsigned char* Platform::MACAddress() const

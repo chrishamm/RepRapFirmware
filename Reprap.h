@@ -61,7 +61,7 @@ class RepRap
 		Tool* GetTool(int toolNumber) const;
 		Tool* GetOnlyTool() const;
 		//Tool* GetToolByDrive(int driveNumber);
-		void SetToolVariables(int toolNumber, float* standbyTemperatures, float* activeTemperatures);
+		void SetToolVariables(int toolNumber, const float* standbyTemperatures, const float* activeTemperatures);
 		bool ToolWarningsAllowed();
 		bool IsHeaterAssignedToTool(int8_t heater) const;
 

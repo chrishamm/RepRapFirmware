@@ -45,9 +45,9 @@ extern void analogReference(eAnalogReference ulMode);
  *
  * \param ulPin
  * \param ulValue
- * \param Optional: Enable fast PWM (25kHz instead of 1kHz)
+ * \param freq (optional)
  */
-extern void analogWriteDuet(uint32_t ulPin, uint32_t ulValue, bool fastPwm);
+extern void analogWriteDuet(uint32_t ulPin, uint32_t ulValue, uint16_t freq);
 extern void analogWrite(uint32_t ulPin, uint32_t ulValue);
 
 /*

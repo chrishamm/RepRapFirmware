@@ -79,10 +79,10 @@ static inline bool TWI_STATUS_NACK(uint32_t status) {
 }
 
 TwoWire::TwoWire(Twi *_twi, void(*_beginCb)(void)) :
-	twi(_twi), rxBufferIndex(0), rxBufferLength(0), txAddress(0),
-			txBufferLength(0), srvBufferIndex(0), srvBufferLength(0), status(
-					UNINITIALIZED), onBeginCallback(_beginCb) {
-	// Empty
+	rxBufferIndex(0), rxBufferLength(0), txAddress(0), txBufferLength(0),
+	srvBufferIndex(0), srvBufferLength(0), onBeginCallback(_beginCb), twi(_twi),
+	status(UNINITIALIZED)
+{
 }
 
 void TwoWire::begin(void) {
@@ -345,7 +345,7 @@ static void Wire_Init(void) {
 
 	NVIC_DisableIRQ(TWI1_IRQn);
 	NVIC_ClearPendingIRQ(TWI1_IRQn);
-	NVIC_SetPriority(TWI1_IRQn, 16);
+	NVIC_SetPriority(TWI1_IRQn, 6);
 	NVIC_EnableIRQ(TWI1_IRQn);
 }
 
@@ -372,7 +372,7 @@ static void Wire1_Init(void) {
 
 	NVIC_DisableIRQ(TWI0_IRQn);
 	NVIC_ClearPendingIRQ(TWI0_IRQn);
-	NVIC_SetPriority(TWI0_IRQn, 16);
+	NVIC_SetPriority(TWI0_IRQn, 6);
 	NVIC_EnableIRQ(TWI0_IRQn);
 }
 

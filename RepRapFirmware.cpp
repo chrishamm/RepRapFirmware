@@ -168,19 +168,17 @@ RepRap reprap;
 
 // Do nothing more in the constructor; put what you want in RepRap:Init()
 
-RepRap::RepRap() : lastToolWarningTime(0.0), ticksInSpinState(0), spinningModule(noModule), debug(0),
-	stopped(false), active(false), resetting(false), usedOutputBuffers(0), maxUsedOutputBuffers(0)
+RepRap::RepRap() : toolList(nullptr), lastToolWarningTime(0.0), ticksInSpinState(0), spinningModule(noModule),
+	debug(0), stopped(false), active(false), resetting(false), usedOutputBuffers(0), maxUsedOutputBuffers(0)
 {
 	platform = new Platform();
 	network = new Network(platform);
 	webserver = new Webserver(platform, network);
 	gCodes = new GCodes(platform, webserver);
 	move = new Move(platform, gCodes);
-	heat = new Heat(platform, gCodes);
+	heat = new Heat(platform);
 	roland = new Roland(platform);
 	printMonitor = new PrintMonitor(platform, gCodes);
-
-	toolList = nullptr;
 
 	freeOutputBuffers = nullptr;
 	for(size_t i = 0; i < OUTPUT_BUFFER_COUNT; i++)
@@ -605,7 +603,7 @@ Tool* RepRap::GetOnlyTool() const
 	return nullptr;
 }*/
 
-void RepRap::SetToolVariables(int toolNumber, float* standbyTemperatures, float* activeTemperatures)
+void RepRap::SetToolVariables(int toolNumber, const float* standbyTemperatures, const float* activeTemperatures)
 {
 	Tool* tool = toolList;
 
@@ -795,12 +793,21 @@ OutputBuffer *RepRap::GetStatusResponse(uint8_t type, ResponseSource source)
 		response->catf(",\"params\":{\"atxPower\":%d", platform->AtxPower() ? 1 : 0);
 
 		// Cooling fan value
-		//@TODO T3P3 only reports first PWM fan
-		float fanValue = (gCodes->CoolingInverted() ? 1.0 - platform->GetFanValue(0) : platform->GetFanValue(0));
-		response->catf(",\"fanPercent\":%.2f", fanValue * 100.0);
+		response->cat(",\"fanPercent\":[");
+		for(size_t i = 0; i < NUM_FANS; i++)
+		{
+			if (i == NUM_FANS - 1)
+			{
+				response->catf("%.2f", platform->GetFanValue(i) * 100.0);
+			}
+			else
+			{
+				response->catf("%.2f,", platform->GetFanValue(i) * 100.0);
+			}
+		}
 
 		// Speed and Extrusion factors
-		response->catf(",\"speedFactor\":%.2f,\"extrFactors\":", move->GetSpeedFactor() * 100.0);
+		response->catf("],\"speedFactor\":%.2f,\"extrFactors\":", move->GetSpeedFactor() * 100.0);
 		ch = '[';
 		for (size_t extruder = 0; extruder < GetExtrudersInUse(); extruder++)
 		{
@@ -961,10 +968,10 @@ OutputBuffer *RepRap::GetStatusResponse(uint8_t type, ResponseSource source)
 			{
 				// Heaters
 				response->catf("{\"number\":%d,\"heaters\":[", tool->Number());
-				for(size_t heater=0; heater<tool->HeaterCount(); heater++)
+				for(size_t heater = 0; heater < tool->HeaterCount(); heater++)
 				{
 					response->catf("%d", tool->Heater(heater));
-					if (heater < tool->HeaterCount() - 1)
+					if (heater + 1 < tool->HeaterCount())
 					{
 						response->cat(",");
 					}
@@ -972,10 +979,10 @@ OutputBuffer *RepRap::GetStatusResponse(uint8_t type, ResponseSource source)
 
 				// Extruder drives
 				response->cat("],\"drives\":[");
-				for(size_t drive=0; drive<tool->DriveCount(); drive++)
+				for(size_t drive = 0; drive < tool->DriveCount(); drive++)
 				{
 					response->catf("%d", tool->Drive(drive));
-					if (drive < tool->DriveCount() - 1)
+					if (drive + 1 < tool->DriveCount())
 					{
 						response->cat(",");
 					}
@@ -1378,6 +1385,9 @@ OutputBuffer *RepRap::GetLegacyStatusResponse(uint8_t type, int seq)
 			response->catf(",\"probe\":\"%d\"", v0);
 			break;
 	}
+
+	// Send the fan0 settings (for PanelDue firmware 1.13)
+	response->catf(",\"fanPercent\":[%.02f,%.02f]", platform->GetFanValue(0) * 100.0, platform->GetFanValue(1) * 100.0);
 
 	// Send fan RPM value
 	response->catf(",\"fanRPM\":%u", static_cast<unsigned int>(platform->GetFanRPM()));

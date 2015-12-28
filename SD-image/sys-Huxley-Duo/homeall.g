@@ -1,3 +1,5 @@
+; homeall.g
+; called to home all axes
 G91
 G1 Z5 F200
 G90
