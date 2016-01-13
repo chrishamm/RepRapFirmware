@@ -106,8 +106,8 @@ static const char* badEscapeResponse = "bad escape";
 
 
 // Constructor and initialisation
-Webserver::Webserver(Platform* p, Network *n) : platform(p), network(n),
-		webserverActive(false), readingConnection(nullptr)
+Webserver::Webserver(Platform* p, Network *n) : platform(p), network(n), webserverActive(false),
+	readingConnection(nullptr)
 {
 	httpInterpreter = new HttpInterpreter(p, this, n);
 	ftpInterpreter = new FtpInterpreter(p, this, n);
@@ -137,7 +137,7 @@ void Webserver::Spin()
 		httpInterpreter->CheckSessions();
 
 		// Check if we can actually send something back to the client
-		if (reprap.GetOutputBytesLeft(nullptr) == 0)
+		if (OutputBuffer::GetBytesLeft(nullptr) == 0)
 		{
 			platform->ClassReport(longWait);
 			return;
@@ -209,7 +209,7 @@ void Webserver::Spin()
 				{
 					telnetInterpreter->SendGCodeReply(transaction);
 				}
-				// Process other messages (unless this is an HTTP request which may need special treatement)
+				// Process other messages (unless this is an HTTP request which may need special treatment)
 				else if (interpreter != httpInterpreter || httpInterpreter->IsReady())
 				{
 					for(size_t i = 0; i < 500; i++)
@@ -236,6 +236,7 @@ void Webserver::Spin()
 						}
 					}
 				}
+				// else the HTTP server is not ready
 			}
 			else
 			{
@@ -498,7 +499,7 @@ Webserver::HttpInterpreter::HttpInterpreter(Platform *p, Webserver *ws, Network 
 	: ProtocolInterpreter(p, ws, n), state(doingCommandWord), numSessions(0), clientsServed(0)
 {
 	gcodeReadIndex = gcodeWriteIndex = 0;
-	gcodeReply = nullptr;
+	gcodeReply = new OutputStack();
 	uploadingTextData = false;
 	processingDeferredRequest = false;
 	numContinuationBytes = seq = 0;
@@ -701,31 +702,41 @@ void Webserver::HttpInterpreter::SendFile(const char* nameOfFileToSend)
 
 void Webserver::HttpInterpreter::SendGCodeReply(NetworkTransaction *transaction)
 {
-	// Send G-Code reply as plain text to the client
-	transaction->Write("HTTP/1.1 200 OK\n");
-	transaction->Write("Content-Type: text/plain\n");
-	transaction->Printf("Content-Length: %u\n", (gcodeReply != nullptr) ? gcodeReply->Length() : 0);
-	transaction->Write("Connection: close\n\n");
-	transaction->Write(gcodeReply);
-	transaction->Commit(false);
-
-	// Check if we need to keep this reply
-	if (gcodeReply != nullptr)
+	// Do we need to keep the G-Code reply for other clients?
+	bool clearReply = false;
+	if (!gcodeReply->IsEmpty())
 	{
 		clientsServed++;
-		if (reprap.Debug(moduleWebserver))
-		{
-			platform->MessageF(HOST_MESSAGE, "Served client %d of %d, refs %u\n", clientsServed, numSessions, gcodeReply->References());
-		}
 		if (clientsServed < numSessions)
 		{
+			// Yes - make sure the Network class doesn't discard its buffers yet
+			// NB: This must happen here, because NetworkTransaction::Write() might already release OutputBuffers
 			gcodeReply->IncreaseReferences(1);
 		}
 		else
 		{
-			gcodeReply = nullptr;
-			clientsServed = 0;
+			// No - clean up again later
+			clearReply = true;
 		}
+
+		if (reprap.Debug(moduleWebserver))
+		{
+			platform->MessageF(HOST_MESSAGE, "Serving client %d of %d\n", clientsServed, numSessions);
+		}
+	}
+
+	// Send the whole G-Code reply as plain text to the client
+	transaction->Write("HTTP/1.1 200 OK\n");
+	transaction->Write("Content-Type: text/plain\n");
+	transaction->Printf("Content-Length: %u\n", gcodeReply->DataLength());
+	transaction->Write("Connection: close\n\n");
+	transaction->Write(gcodeReply);
+	transaction->Commit(false);
+
+	// Possibly clean up the G-code reply once again
+	if (clearReply)
+	{
+		gcodeReply->Clear();
 	}
 }
 
@@ -748,7 +759,7 @@ void Webserver::HttpInterpreter::SendJsonResponse(const char* command)
 
 	// We need a valid output buffer to process this request...
 	OutputBuffer *jsonResponse;
-	if (!reprap.AllocateOutput(jsonResponse))
+	if (!OutputBuffer::Allocate(jsonResponse))
 	{
 		// Should never happen
 		network->GetTransaction()->Commit(false);
@@ -771,10 +782,7 @@ void Webserver::HttpInterpreter::SendJsonResponse(const char* command)
 	// Check the special case of a deferred request
 	if (processingDeferredRequest)
 	{
-		do {
-			jsonResponse = reprap.ReleaseOutput(jsonResponse);
-		} while (jsonResponse != nullptr);
-
+		OutputBuffer::ReleaseAll(jsonResponse);
 		return;
 	}
 
@@ -819,13 +827,18 @@ void Webserver::HttpInterpreter::SendJsonResponse(const char* command)
 bool Webserver::HttpInterpreter::IsReady()
 {
 	// We want to send a response, but we need memory for that. If there isn't enough available, see if we can truncate the G-Code reply
-	size_t bytesLeft = reprap.GetOutputBytesLeft(nullptr);
-	if (bytesLeft < minHttpResponseSize && gcodeReply != nullptr)
+	while (OutputBuffer::GetBytesLeft(nullptr) < minHttpResponseSize)
 	{
-		if (bytesLeft + reprap.TruncateOutput(gcodeReply, minHttpResponseSize) < minHttpResponseSize)
+		if (gcodeReply->IsEmpty())
 		{
-			// There is not enough space available and we cannot free it up. Try again later
+			// We cannot truncate any G-Code reply, so try again later
 			return false;
+		}
+
+		if (OutputBuffer::Truncate(gcodeReply->GetFirstItem(), minHttpResponseSize) == 0)
+		{
+			// Truncating didn't work out, but see if we can free up a few more bytes by releasing the first reply item
+			OutputBuffer::ReleaseAll(gcodeReply->Pop());
 		}
 	}
 
@@ -901,12 +914,12 @@ bool Webserver::HttpInterpreter::GetJsonResponse(const char* request, OutputBuff
 					type = 1;
 				}
 
-				reprap.ReplaceOutput(response, reprap.GetStatusResponse(type, ResponseSource::HTTP));
+				OutputBuffer::Replace(response, reprap.GetStatusResponse(type, ResponseSource::HTTP));
 			}
 			else
 			{
 				// Deprecated
-				reprap.ReplaceOutput(response, reprap.GetLegacyStatusResponse(1, 0));
+				OutputBuffer::Replace(response, reprap.GetLegacyStatusResponse(1, 0));
 			}
 		}
 		else if (StringEquals(request, "gcode") && StringEquals(key, "gcode"))
@@ -968,14 +981,14 @@ bool Webserver::HttpInterpreter::GetJsonResponse(const char* request, OutputBuff
 					flagDirs = StringEquals(qualifiers[1].value, "1");
 				}
 			}
-			reprap.ReplaceOutput(response, reprap.GetFilesResponse(dir, flagDirs));
+			OutputBuffer::Replace(response, reprap.GetFilesResponse(dir, flagDirs));
 		}
 		else if (StringEquals(request, "fileinfo"))
 		{
 			OutputBuffer *buffer;
 			if (reprap.GetPrintMonitor()->GetFileInfoResponse(StringEquals(key, "name") ? value : nullptr, buffer))
 			{
-				reprap.ReplaceOutput(response, buffer);
+				OutputBuffer::Replace(response, buffer);
 				processingDeferredRequest = false;
 			}
 			else
@@ -1009,7 +1022,7 @@ bool Webserver::HttpInterpreter::GetJsonResponse(const char* request, OutputBuff
 		}
 		else if (StringEquals(request, "config"))
 		{
-			reprap.ReplaceOutput(response, reprap.GetConfigResponse());
+			OutputBuffer::Replace(response, reprap.GetConfigResponse());
 		}
 		else
 		{
@@ -1043,6 +1056,10 @@ bool Webserver::HttpInterpreter::NeedMoreData()
 		// At this stage we've processed the first chunk of a POST upload request. Store the
 		// initial payload and reset the HTTP reader again in order to process new requests
 		WriteUploadedData(clientMessage + (clientPointer - uploadedBytes), uploadedBytes);
+		if (reprap.Debug(moduleWebserver))
+		{
+			platform->MessageF(HOST_MESSAGE, "Wrote %lu bytes of file\n", uploadedBytes);
+		}
 		ResetState();
 		return false;
 	}
@@ -1229,7 +1246,6 @@ bool Webserver::HttpInterpreter::CharFromClient(char c)
 				case '\t':
 					clientMessage[clientPointer++] = 0;
 					qualifiers[numQualKeys].key = clientMessage + clientPointer;	// so that we can read the whole value even if it contains a null
-					++numCommandWords;
 					commandWords[numCommandWords] = clientMessage + clientPointer;
 					state = doingCommandWord;
 					break;
@@ -1432,12 +1448,18 @@ bool Webserver::HttpInterpreter::ProcessMessage()
 {
 	if (reprap.Debug(moduleWebserver))
 	{
-		platform->MessageF(HOST_MESSAGE, "HTTP requests with %d command words:", numCommandWords);
+		platform->MessageF(HOST_MESSAGE, "HTTP req, command words {", numCommandWords);
 		for (size_t i = 0; i < numCommandWords; ++i)
 		{
 			platform->MessageF(HOST_MESSAGE, " %s", commandWords[i]);
 		}
-		platform->Message(HOST_MESSAGE, "\n");
+		platform->Message(HOST_MESSAGE, " }, parameters {");
+
+		for (size_t i = 0; i < numQualKeys; ++i)
+		{
+			platform->MessageF(HOST_MESSAGE, " %s=%s", qualifiers[i].key, qualifiers[i].value);
+		}
+		platform->Message(HOST_MESSAGE, " }\n");
 	}
 
 	if (numCommandWords < 2)
@@ -1499,6 +1521,10 @@ bool Webserver::HttpInterpreter::ProcessMessage()
 					FileStore *file = platform->GetFileStore("0:/", qualifiers[0].value, true);
 					if (StartUpload(file))
 					{
+						if (reprap.Debug(moduleWebserver))
+						{
+							platform->MessageF(HOST_MESSAGE, "Start uploading file %s length %lu\n", qualifiers[0].value, postFileLength);
+						}
 						// Start new file upload
 						uploadingTextData = false;
 						uploadedBytes = numContinuationBytes = 0;
@@ -1524,7 +1550,7 @@ bool Webserver::HttpInterpreter::ProcessMessage()
 							// Align the client pointer on a 32-bit boundary for HSMCI efficiency.
 							// To remain efficient, the browser should send POSTDATA in multiples of 4 bytes.
 							clientPointer += 3;
-							clientPointer -= reinterpret_cast<unsigned int>(clientMessage + clientPointer) & 3;
+							clientPointer -= reinterpret_cast<size_t>(clientMessage + clientPointer) & 3;
 							state = doingPost;
 
 							return false;
@@ -1604,12 +1630,12 @@ void Webserver::HttpInterpreter::UpdateAuthentication()
 
 void Webserver::HttpInterpreter::RemoveAuthentication()
 {
-	uint32_t remoteIP = network->GetTransaction()->GetRemoteIP();
-	for(int i=(int)numSessions - 1; i>=0; i--)
+	const uint32_t remoteIP = network->GetTransaction()->GetRemoteIP();
+	for(int i = (int)numSessions - 1; i >= 0; i--)
 	{
 		if (sessions[i].ip == remoteIP)
 		{
-			for(int k=numSessions - 1; k > i; k--)
+			for (size_t k = i + 1; k < numSessions; ++k)
 			{
 				memcpy(&sessions[k - 1], &sessions[k], sizeof(HttpSession));
 			}
@@ -1636,12 +1662,12 @@ void Webserver::HttpInterpreter::CheckSessions()
 		}
 	}
 
-	// If there are no clients connected, we can free up some run-time space by dumping the G-Code response
+	// If we cannot send the G-Code reply to anyone, we may free up some run-time space by dumping it
 	if (numSessions == 0 || clientsServed >= numSessions)
 	{
-		while (gcodeReply != nullptr)
+		while (!gcodeReply->IsEmpty())
 		{
-			gcodeReply = reprap.ReleaseOutput(gcodeReply);
+			OutputBuffer::ReleaseAll(gcodeReply->Pop());
 		}
 		clientsServed = 0;
 	}
@@ -1762,23 +1788,16 @@ void Webserver::HttpInterpreter::HandleGCodeReply(OutputBuffer *reply)
 	{
 		if (numSessions > 0)
 		{
-			if (gcodeReply == nullptr)
-			{
-				gcodeReply = reply;
-			}
-			else
-			{
-				gcodeReply->Append(reply);
-			}
+			// FIXME: This might cause G-code responses to be sent twice to fast HTTP clients, but
+			// I (chrishamm) cannot think of a nicer way to deal with slow clients at the moment...
+			gcodeReply->Push(reply);
+			clientsServed = 0;
 			seq++;
 		}
 		else
 		{
 			// Don't use buffers that may never get released...
-			while (reply != nullptr)
-			{
-				reply = reprap.ReleaseOutput(reply);
-			}
+			OutputBuffer::ReleaseAll(reply);
 		}
 	}
 }
@@ -1787,17 +1806,18 @@ void Webserver::HttpInterpreter::HandleGCodeReply(const char *reply)
 {
 	if (numSessions > 0)
 	{
-		if (gcodeReply == nullptr)
+		OutputBuffer *buffer = gcodeReply->GetLastItem();
+		if (buffer == nullptr || buffer->References() > 1)
 		{
-			OutputBuffer *buffer;
-			if (!reprap.AllocateOutput(buffer))
+			if (!OutputBuffer::Allocate(buffer))
 			{
-				// No more space available
+				// No more space available, stop here
 				return;
 			}
-			gcodeReply = buffer;
+			gcodeReply->Push(buffer);
 		}
-		gcodeReply->cat(reply);
+
+		buffer->cat(reply);
 		seq++;
 	}
 }
@@ -2506,10 +2526,8 @@ void Webserver::TelnetInterpreter::ConnectionLost(uint32_t remoteIP, uint16_t re
 		ResetState();
 
 		// Don't save up output buffers if they can't be sent
-		while (gcodeReply != nullptr)
-		{
-			reprap.ReleaseOutput(gcodeReply);
-		}
+		OutputBuffer::ReleaseAll(gcodeReply);
+		gcodeReply = nullptr;
 	}
 }
 
@@ -2688,13 +2706,13 @@ void Webserver::TelnetInterpreter::HandleGCodeReply(OutputBuffer *reply)
 		if (gcodeReply == nullptr)
 		{
 			OutputBuffer *buffer;
-			if (!reprap.AllocateOutput(buffer))
+			if (!OutputBuffer::Allocate(buffer))
 			{
-				reprap.TruncateOutput(reply, 1);
-				if (!reprap.AllocateOutput(buffer, false))
+				OutputBuffer::Truncate(reply, OUTPUT_BUFFER_SIZE);
+				if (!OutputBuffer::Allocate(buffer))
 				{
-					// If we're really short on memory, just skip the conversion
-					gcodeReply = reply;
+					// If we're really short on memory, release the G-Code reply instantly
+					OutputBuffer::ReleaseAll(reply);
 					return;
 				}
 			}
@@ -2714,16 +2732,13 @@ void Webserver::TelnetInterpreter::HandleGCodeReply(OutputBuffer *reply)
 				gcodeReply->cat(*data);
 				data++;
 			}
-			reply = reprap.ReleaseOutput(reply);
+			reply = OutputBuffer::Release(reply);
 		} while (reply != nullptr);
 	}
 	else
 	{
 		// Don't use buffers that may never get released...
-		while (reply != nullptr)
-		{
-			reply = reprap.ReleaseOutput(reply);
-		}
+		OutputBuffer::ReleaseAll(reply);
 	}
 }
 
@@ -2735,16 +2750,16 @@ void Webserver::TelnetInterpreter::HandleGCodeReply(const char *reply)
 		if (gcodeReply == nullptr)
 		{
 			OutputBuffer *buffer;
-			if (!reprap.AllocateOutput(buffer))
+			if (!OutputBuffer::Allocate(buffer))
 			{
-				// No more space available to store this reply
+				// No more space available to store this reply, stop here
 				return;
 			}
 			gcodeReply = buffer;
 		}
 
 		// Write entire content to new output buffers, but this time with \r\n instead of \n
-		while (*reply)
+		while (*reply != 0)
 		{
 			if (*reply == '\n' && gcodeReply->cat('\r') == 0)
 			{

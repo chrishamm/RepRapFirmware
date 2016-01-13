@@ -601,6 +601,7 @@ void DDA::Prepare()
 
 	goingSlow = false;
 	firstDM = nullptr;
+	bool xyMoving = false;
 
 	for (size_t drive = 0; drive < DRIVES; ++drive)
 	{
@@ -611,7 +612,7 @@ void DDA::Prepare()
 			reprap.GetPlatform()->EnableDrive(drive);
 			if (drive >= AXES)
 			{
-				dm.PrepareExtruder(*this, params, drive);
+				dm.PrepareExtruder(*this, params, drive, xyMoving);
 
 				// Check for sensible values, print them if they look dubious
 				if (reprap.Debug(moduleDda)
@@ -627,6 +628,10 @@ void DDA::Prepare()
 			}
 			else if (isDeltaMovement)
 			{
+				if (drive <= Z_AXIS)
+				{
+					xyMoving = true;
+				}
 				dm.PrepareDeltaAxis(*this, params, drive);
 
 				// Check for sensible values, print them if they look dubious
@@ -637,6 +642,10 @@ void DDA::Prepare()
 			}
 			else
 			{
+				if (drive < Z_AXIS)
+				{
+					xyMoving = true;
+				}
 				dm.PrepareCartesianAxis(*this, params, drive);
 
 				// Check for sensible values, print them if they look dubious
@@ -652,8 +661,8 @@ void DDA::Prepare()
 			dm.stepInterval = 999999;						// initialise to a large value so that we will calculating the time for just one step
 			dm.stepsTillRecalc = 0;							// so that we don't skip the calculation
 			bool stepsToDo = (isDeltaMovement && drive < AXES)
-						? dm.CalcNextStepTimeDelta(*this, drive)
-						: dm.CalcNextStepTimeCartesian(*this, drive);
+						? dm.CalcNextStepTimeDelta(*this, drive, false)
+						: dm.CalcNextStepTimeCartesian(*this, drive, false);
 			if (stepsToDo)
 			{
 				InsertDM(&dm);
@@ -858,7 +867,9 @@ bool DDA::Step()
 			++numReps;
 			reprap.GetPlatform()->StepHigh(drive);
 			firstDM = dm->nextDM;
-			bool moreSteps = (isDeltaMovement && drive < AXES) ? dm->CalcNextStepTimeDelta(*this, drive) : dm->CalcNextStepTimeCartesian(*this, drive);
+			bool moreSteps = (isDeltaMovement && drive < AXES)
+				? dm->CalcNextStepTimeDelta(*this, drive, true)
+				: dm->CalcNextStepTimeCartesian(*this, drive, true);
 			if (moreSteps)
 			{
 				InsertDM(dm);

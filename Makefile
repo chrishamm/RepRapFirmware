@@ -64,7 +64,7 @@ CXX := $(GCC_PATH)/bin/$(CROSS_COMPILE)g++
 LD := $(GCC_PATH)/bin/$(CROSS_COMPILE)gcc
 OBJCOPY := $(GCC_PATH)/bin/$(CROSS_COMPILE)objcopy
 
-INCLUDES := $(PWD)/Libraries/Flash $(PWD)/Libraries/EMAC $(PWD)/Libraries/Lwip $(PWD)/Libraries/MCP4461 $(PWD)/Libraries/SD_HSMCI $(PWD)/Libraries/SD_HSMCI/utility $(PWD)/Libraries/Wire
+INCLUDES := $(PWD)/Libraries/Flash $(PWD)/Libraries/EMAC $(PWD)/Libraries/Lwip $(PWD)/Libraries/MAX31855 $(PWD)/Libraries/MCP4461 $(PWD)/Libraries/SD_HSMCI $(PWD)/Libraries/SD_HSMCI/utility $(PWD)/Libraries/SPI $(PWD)/Libraries/Wire
 INCLUDES += $(DUET_BOARD_PATH)/cores/arduino $(DUET_BOARD_PATH)/variants/duet
 INCLUDES += $(DUET_BOARD_PATH)/system/libsam $(DUET_BOARD_PATH)/system/libsam/include $(DUET_BOARD_PATH)/system/CMSIS/CMSIS/Include $(DUET_BOARD_PATH)/system/CMSIS/Device/ATMEL
 
@@ -80,7 +80,7 @@ LDFLAGS += $(OPTIMIZATION) -Wl,--gc-sections -mcpu=cortex-m3 "-T$(DUET_BOARD_PAT
 
 # Unfortunately make doesn't support directory wildcards in targets, so instead we must explicitly specify the source paths by using VPATH
 VPATH := $(DUET_BOARD_PATH)/cores/arduino $(DUET_BOARD_PATH)/cores/arduino/USB $(DUET_BOARD_PATH)/variants/duet
-VPATH += $(PWD)/Libraries/EMAC $(PWD)/Libraries/Flash $(PWD)/Libraries/Lwip/contrib/apps/netbios $(PWD)/Libraries/Lwip/lwip/src/api $(PWD)/Libraries/Lwip/lwip/src/core $(PWD)/Libraries/Lwip/lwip/src/core/ipv4 $(PWD)/Libraries/Lwip/lwip/src/netif $(PWD)/Libraries/Lwip/lwip/src/sam/netif $(PWD)/Libraries/MCP4461 $(PWD)/Libraries/SD_HSMCI/utility $(PWD)/Libraries/Wire
+VPATH += $(PWD)/Libraries/EMAC $(PWD)/Libraries/Flash $(PWD)/Libraries/Lwip/contrib/apps/netbios $(PWD)/Libraries/Lwip/lwip/src/api $(PWD)/Libraries/Lwip/lwip/src/core $(PWD)/Libraries/Lwip/lwip/src/core/ipv4 $(PWD)/Libraries/Lwip/lwip/src/netif $(PWD)/Libraries/Lwip/lwip/src/sam/netif $(PWD)/Libraries/MAX31855 $(PWD)/Libraries/MCP4461 $(PWD)/Libraries/SD_HSMCI/utility $(PWD)/Libraries/SPI $(PWD)/Libraries/Wire
 
 C_SOURCES += $(foreach dir,$(VPATH),$(wildcard $(dir)/*.c)) $(wildcard $(PWD)/*.c)
 CPP_SOURCES := $(foreach dir,$(VPATH),$(wildcard $(dir)/*.cpp)) $(wildcard $(PWD)/*.cpp)

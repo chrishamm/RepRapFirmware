@@ -260,7 +260,7 @@ class GCodes
 		bool limitAxes;												// Don't think outside the box.
 		bool axisIsHomed[AXES];										// These record which of the axes have been homed
 		bool waitingForMoveToComplete;
-		float lastFan0Value, lastFan1Value;
+		float pausedFanValues[NUM_FANS];
 		float lastProbedZ;											// The last height at which the Z probe stopped
 		int8_t toolChangeSequence;									// Steps through the tool change procedure
 		CodeQueueItem *internalCodeQueue;							// Linked list of all the queued codes

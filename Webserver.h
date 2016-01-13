@@ -245,7 +245,7 @@ class Webserver
 
 				// Response from GCodes class
 
-				OutputBuffer * volatile gcodeReply;
+				OutputStack *gcodeReply;
 
 			protected:
 
@@ -352,7 +352,7 @@ class Webserver
 				void ProcessGcode(const char* gc);
 				void StoreGcodeData(const char* data, uint16_t len);
 
-				// Response from GCodes class
+				// Converted response from GCodes class (NL -> CRNL)
 
 				OutputBuffer * volatile gcodeReply;
 		};

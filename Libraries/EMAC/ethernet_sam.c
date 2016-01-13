@@ -141,7 +141,7 @@ void ethernet_timers_update(void)
 
 // Added by AB.
 
-static void ethernet_configure_interface(const unsigned char ipAddress[], const unsigned char netMask[], const unsigned char gateWay[])
+static void ethernet_configure_interface(const uint8_t ipAddress[], const uint8_t netMask[], const uint8_t gateWay[])
 {
 	struct ip_addr x_ip_addr, x_net_mask, x_gateway;
 	extern err_t ethernetif_init(struct netif *netif);
@@ -182,7 +182,7 @@ static void ethernet_configure_interface(const unsigned char ipAddress[], const 
 }
 
 // This sets the IP configuration on-the-fly
-void ethernet_set_configuration(const unsigned char ipAddress[], const unsigned char netMask[], const unsigned char gateWay[])
+void ethernet_set_configuration(const uint8_t ipAddress[], const uint8_t netMask[], const uint8_t gateWay[])
 {
 	struct ip_addr x_ip_addr, x_net_mask, x_gateway;
 	IP4_ADDR(&x_ip_addr, ipAddress[0], ipAddress[1], ipAddress[2], ipAddress[3]);
@@ -257,7 +257,7 @@ void ethernet_status_callback(struct netif *netif)
 	{
 		RepRapNetworkMessage("Network up, IP=");
 		ipaddr_ntoa_r(&(netif->ip_addr), c_mess, sizeof(c_mess));
-		strncat(c_mess, "\n\n", sizeof(c_mess) - 1);
+		strncat(c_mess, "\n\n", sizeof(c_mess) - strlen(c_mess) - 1);
 		RepRapNetworkMessage(c_mess);
 		netif->flags |= NETIF_FLAG_LINK_UP;
 		net_if_ready = true;

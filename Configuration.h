@@ -24,8 +24,8 @@ Licence: GPL
 #define CONFIGURATION_H
 
 #define NAME "RepRapFirmware"
-#define VERSION "1.09p-ch"
-#define DATE "2015-12-13"
+#define VERSION "1.09q-alpha-ch"
+#define DATE "2016-01-13"
 
 #define AUTHORS "reprappro, dc42, chrishamm, t3p3, dnewman"
 
@@ -46,103 +46,112 @@ enum Compatibility
 
 // Generic constants
 
-static const float ABS_ZERO = -273.15;						// Celsius
-static const float NEARLY_ABS_ZERO = -273.0;				// Celsius
-static const float ROOM_TEMPERATURE = 21.0;					// Celsius
+const float ABS_ZERO = -273.15;							// Celsius
+const float NEARLY_ABS_ZERO = -273.0;					// Celsius
+const float ROOM_TEMPERATURE = 21.0;					// Celsius
 
-static const float INCH_TO_MM = 25.4;
-static const float MINUTES_TO_SECONDS = 60.0;
-static const float SECONDS_TO_MINUTES = 1.0 / MINUTES_TO_SECONDS;
+const float INCH_TO_MM = 25.4;
+const float MINUTES_TO_SECONDS = 60.0;
+const float SECONDS_TO_MINUTES = 1.0 / MINUTES_TO_SECONDS;
 
-static const float LONG_TIME = 300.0;						// Seconds
-static const float MINIMUM_TOOL_WARNING_INTERVAL = 4.0;		// Seconds
+const float LONG_TIME = 300.0;							// Seconds
+const float MINIMUM_TOOL_WARNING_INTERVAL = 4.0;		// Seconds
 
 // Heater values
 
-static const float HEAT_SAMPLE_TIME = 0.5;					// Seconds
-static const float HEAT_PWM_AVERAGE_TIME = 5.0;				// Seconds
+const float HEAT_SAMPLE_TIME = 0.5;						// Seconds
+const float HEAT_PWM_AVERAGE_TIME = 5.0;				// Seconds
 
-static const float TEMPERATURE_CLOSE_ENOUGH = 2.5;			// Celsius
-static const float TEMPERATURE_LOW_SO_DONT_CARE = 40.0;		// Celsius
-static const float HOT_ENOUGH_TO_EXTRUDE = 160.0;			// Celsius
-static const float HOT_ENOUGH_TO_RETRACT = 90.0;			// Celsius
-static const float TIME_TO_HOT = 150.0;						// Seconds
+const float TEMPERATURE_CLOSE_ENOUGH = 2.5;				// Celsius
+const float TEMPERATURE_LOW_SO_DONT_CARE = 40.0;		// Celsius
+const float HOT_ENOUGH_TO_EXTRUDE = 160.0;				// Celsius
+const float HOT_ENOUGH_TO_RETRACT = 90.0;				// Celsius
+const float TIME_TO_HOT = 150.0;						// Seconds
 
-static const uint8_t MAX_BAD_TEMPERATURE_COUNT = 6;			// Number of bad temperature samples before a heater fault is reported
-static const float BAD_LOW_TEMPERATURE = -10.0;				// Celsius
-static const float BAD_HIGH_TEMPERATURE = 300.0;			// Celsius
+const uint8_t MAX_BAD_TEMPERATURE_COUNT = 6;			// Number of bad temperature samples before a heater fault is reported
+const float BAD_LOW_TEMPERATURE = -10.0;				// Celsius
+const float BAD_HIGH_TEMPERATURE = 300.0;				// Celsius
+const float HOT_END_FAN_TEMPERATURE = 45.0;				// Temperature at which a thermostatic hot end fan comes on
+const float BAD_ERROR_TEMPERATURE = 2000.0;				// Must exceed BAD_HIGH_TEMPERATURE
 
-static const unsigned int SLOW_HEATER_PWM_FREQUENCY = 10;	// Hz
-static const unsigned int NORMAL_HEATER_PWM_FREQUENCY = 500;// Hz
-static const unsigned int DEFAULT_FAN_PWM_FREQUENCY = 500;	// Hz (increase to 25kHz for 4-wire PWM fans)
+const unsigned int SLOW_HEATER_PWM_FREQUENCY = 10;		// Hz
+const unsigned int NORMAL_HEATER_PWM_FREQUENCY = 500;	// Hz
+const unsigned int DEFAULT_FAN_PWM_FREQUENCY = 500;		// Hz (increase to 25kHz for 4-wire PWM fans)
 
 // Default Z probe values
 
-static const size_t MAX_PROBE_POINTS = 16;					// Maximum number of probe points
-static const size_t MAX_DELTA_PROBE_POINTS = 8;				// Must be <= MaxProbePoints, may be smaller to reduce matrix storage requirements. Preferably a power of 2.
+const size_t MAX_PROBE_POINTS = 16;						// Maximum number of probe points
+const size_t MAX_DELTA_PROBE_POINTS = 8;				// Must be <= MaxProbePoints, may be smaller to reduce matrix storage requirements. Preferably a power of 2.
 
-static const float DEFAULT_Z_DIVE = 5.0;					// Millimetres
-static const float DEFAULT_PROBE_SPEED = 2.0;				// Default Z probing speed
-static const float DEFAULT_TRAVEL_SPEED = 100.0;			// Default speed for travel to probe points
+const float DEFAULT_Z_DIVE = 5.0;						// Millimetres
+const float DEFAULT_PROBE_SPEED = 2.0;					// Default Z probing speed
+const float DEFAULT_TRAVEL_SPEED = 100.0;				// Default speed for travel to probe points
 
-static const float TRIANGLE_ZERO = -0.001;					// Millimetres
-static const float SILLY_Z_VALUE = -9999.0;					// Millimetres
+const float TRIANGLE_ZERO = -0.001;						// Millimetres
+const float SILLY_Z_VALUE = -9999.0;					// Millimetres
 
 // String lengths
 
-static const size_t LONG_STRING_LENGTH = 1024;
-static const size_t FORMAT_STRING_LENGTH = 256;
-static const size_t SHORT_STRING_LENGTH = 40;
+const size_t LONG_STRING_LENGTH = 1024;
+const size_t FORMAT_STRING_LENGTH = 256;
+const size_t SHORT_STRING_LENGTH = 40;
 
-static const size_t GCODE_LENGTH = 100;
-static const size_t GCODE_REPLY_LENGTH = 2048;
-static const size_t MESSAGE_LENGTH = 256;
+const size_t GCODE_LENGTH = 100;
+const size_t GCODE_REPLY_LENGTH = 2048;
+const size_t MESSAGE_LENGTH = 256;
 
 // Output buffer lengths
 
-static const uint16_t OUTPUT_BUFFER_SIZE = 256;				// How many bytes does each OutputBuffer hold?
-static const size_t OUTPUT_BUFFER_COUNT = 16;				// How many OutputBuffer instances do we have?
+const uint16_t OUTPUT_BUFFER_SIZE = 256;				// How many bytes does each OutputBuffer hold?
+const size_t OUTPUT_BUFFER_COUNT = 16;					// How many OutputBuffer instances do we have?
 
 // Move system
 
-static const float DEFAULT_FEEDRATE = 3000.0;				// The initial requested feed rate after resetting the printer
-static const float DEFAULT_IDLE_TIMEOUT = 30.0;				// Seconds
+const float DEFAULT_FEEDRATE = 3000.0;					// The initial requested feed rate after resetting the printer
+const float DEFAULT_IDLE_TIMEOUT = 30.0;				// Seconds
 
 // Default nozzle and filament values
 
-static const float NOZZLE_DIAMETER = 0.5;					// Millimetres
-static const float FILAMENT_WIDTH = 1.75;					// Millimetres
+const float NOZZLE_DIAMETER = 0.5;						// Millimetres
+const float FILAMENT_WIDTH = 1.75;						// Millimetres
 
 // Webserver defaults
 
-static const char *DEFAULT_PASSWORD = "reprap";				// Default machine password
-static const char *DEFAULT_NAME = "My Duet";				// Default machine name
+#define DEFAULT_PASSWORD "reprap"						// Default machine password
+#define DEFAULT_NAME "My Duet"							// Default machine name
+#define HOSTNAME "duet"
 
-static const char *INDEX_PAGE_FILE = "reprap.htm";
-static const char *FOUR04_PAGE_FILE = "html404.htm";
+#define INDEX_PAGE_FILE "reprap.htm"
+#define FOUR04_PAGE_FILE "html404.htm"
 
 // Filesystem and upload defaults
 
-static const char *CONFIG_FILE = "config.g";
-static const char *DEFAULT_FILE = "default.g";
-static const char *HOME_X_G = "homex.g";
-static const char *HOME_Y_G = "homey.g";
-static const char *HOME_Z_G = "homez.g";
-static const char *HOME_ALL_G = "homeall.g";
-static const char *HOME_DELTA_G = "homedelta.g";
-static const char *BED_EQUATION_G = "bed.g";
-static const char *PAUSE_G = "pause.g";
-static const char *RESUME_G = "resume.g";
-static const char *STOP_G = "stop.g";
-static const char *SLEEP_G = "sleep.g";
+#define FS_PREFIX "0:"
+#define GCODE_DIR "0:/gcodes/"							// Place to find G-Code files on the SD card
+#define SYS_DIR "0:/sys/"								// Ditto - System files
+#define MACRO_DIR "0:/macros/"							// Ditto - Macro files
+#define WEB_DIR "0:/www/"								// Ditto - Web files
 
-static const char *EOF_STRING = "<!-- **EoF** -->";
+#define CONFIG_FILE "config.g"
+#define DEFAULT_FILE "default.g"
+#define HOME_X_G "homex.g"
+#define HOME_Y_G "homey.g"
+#define HOME_Z_G "homez.g"
+#define HOME_ALL_G "homeall.g"
+#define HOME_DELTA_G "homedelta.g"
+#define BED_EQUATION_G "bed.g"
+#define PAUSE_G "pause.g"
+#define RESUME_G "resume.g"
+#define STOP_G "stop.g"
+#define SLEEP_G "sleep.g"
+
+#define EOF_STRING "<!-- **EoF** -->"
 
 // List defaults
 
-static const char LIST_SEPARATOR = ':';
-static const char FILE_LIST_SEPARATOR = ',';
-static const char FILE_LIST_BRACKET = '"';
+const char LIST_SEPARATOR = ':';
+const char FILE_LIST_SEPARATOR = ',';
+const char FILE_LIST_BRACKET = '"';
 
 #endif
 

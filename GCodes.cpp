@@ -75,7 +75,10 @@ void GCodes::Init()
 		axisScaleFactors[axis] = 1.0;
 	}
 	toolChangeSequence = 0;
-	lastFan0Value = lastFan1Value = 0.0;
+	for(size_t fan = 0; fan < NUM_FANS; fan++)
+	{
+		pausedFanValues[fan] = 0.0;
+	}
 	internalCodeQueue = nullptr;
 	releasedQueueItems = nullptr;
 	for(size_t i = 0; i < CODE_QUEUE_LENGTH; i++)
@@ -119,10 +122,8 @@ void GCodes::Reset()
 	cannedCycleMoveCount = 0;
 	cannedCycleMoveQueued = false;
 	auxDetected = false;
-	while (auxGCodeReply != nullptr)
-	{
-		auxGCodeReply = reprap.ReleaseOutput(auxGCodeReply);
-	}
+	OutputBuffer::ReleaseAll(auxGCodeReply);
+	auxGCodeReply = nullptr;
 	auxSeq = 0;
 	simulating = false;
 	simulationTime = 0.0;
@@ -470,7 +471,7 @@ bool GCodes::Pop()
 	moveBuffer[DRIVES] = feedrateStack[stackPointer];
 	reprap.GetMove()->SetFeedrate(feedrateStack[stackPointer]);
 	doingFileMacro = doingFileMacroStack[stackPointer];
-	for(size_t extruder=0; extruder<DRIVES-AXES; extruder++)
+	for(size_t extruder = 0; extruder < DRIVES - AXES; extruder++)
 	{
 		lastExtruderPosition[extruder] = extruderPositionStack[stackPointer][extruder];
 	}
@@ -1422,7 +1423,8 @@ bool GCodes::SetBedEquationWithProbe(const GCodeBuffer *gb, StringRef& reply)
 		probeCount++;
 	}
 
-	if (probeCount >= reprap.GetMove()->NumberOfXYProbePoints())
+	int numProbePoints = reprap.GetMove()->NumberOfXYProbePoints();
+	if (probeCount >= numProbePoints)
 	{
 		probeCount = 0;
 		zProbesSet = true;
@@ -2016,21 +2018,18 @@ void GCodes::SetMACAddress(GCodeBuffer *gb)
 void GCodes::HandleReply(GCodeBuffer *gb, bool error, const char *reply)
 {
 	// If we're executing a queued code, make sure gb points to the right source
-
 	if (gb == queuedGCode && internalCodeQueue != nullptr && internalCodeQueue->IsExecuting())
 	{
 		gb = internalCodeQueue->GetSource();
 	}
 
 	// Don't report "ok" responses if a (macro) file is being processed
-
-	if ((gb == fileMacroGCode || gb == fileGCode) && !reply[0])
+	if ((gb == fileMacroGCode || gb == fileGCode) && reply[0] == 0)
 	{
 		return;
 	}
 
 	// Second UART device, e.g. dc42's PanelDue. Do NOT use emulation for this one!
-
 	if (gb == auxGCode)
 	{
 		// Discard this response if either no aux device is attached or if the response is empty
@@ -2040,7 +2039,7 @@ void GCodes::HandleReply(GCodeBuffer *gb, bool error, const char *reply)
 		}
 
 		// Regular text-based responses for AUX are always stored and processed by M105/M408
-		if (auxGCodeReply == nullptr && !reprap.AllocateOutput(auxGCodeReply))
+		if (auxGCodeReply == nullptr && !OutputBuffer::Allocate(auxGCodeReply))
 		{
 			// No more space to buffer this response. Should never happen
 			return;
@@ -2051,7 +2050,7 @@ void GCodes::HandleReply(GCodeBuffer *gb, bool error, const char *reply)
 		return;
 	}
 
-	const Compatibility c = (gb == serialGCode || gb == telnetGCode) ? platform->Emulating() : me;
+	// Where do we need to send this reply?
 	MessageType type = GENERIC_MESSAGE;
 	if (gb == httpGCode)
 	{
@@ -2066,8 +2065,10 @@ void GCodes::HandleReply(GCodeBuffer *gb, bool error, const char *reply)
 		type = HOST_MESSAGE;
 	}
 
+	// What kind of emulation should be used?
+	const Compatibility c = (gb == serialGCode || gb == telnetGCode) ? platform->Emulating() : me;
 	const char* response = (gb->Seen('M') && gb->GetIValue() == 998) ? "rs " : "ok";
-	const char* emulationType = 0;
+	const char* emulationType = nullptr;
 
 	switch (c)
 	{
@@ -2076,12 +2077,8 @@ void GCodes::HandleReply(GCodeBuffer *gb, bool error, const char *reply)
 			if (error)
 			{
 				platform->Message(type, "Error: ");
-				platform->Message(type, reply);
 			}
-			else
-			{
-				platform->Message(type, reply);
-			}
+			platform->Message(type, reply);
 			return;
 
 		case marlin:
@@ -2141,7 +2138,7 @@ void GCodes::HandleReply(GCodeBuffer *gb, bool error, const char *reply)
 			emulationType = "unknown";
 	}
 
-	if (emulationType != 0)
+	if (emulationType != nullptr)
 	{
 		platform->MessageF(type, "Emulation of %s is not yet supported.\n", emulationType);	// don't send this one to the web as well, it concerns only the USB interface
 	}
@@ -2156,23 +2153,18 @@ void GCodes::HandleReply(GCodeBuffer *gb, bool error, OutputBuffer *reply)
 	}
 
 	// If we're executing a queued code, make sure gb points to the right source
-	
 	if (gb == queuedGCode && internalCodeQueue != nullptr && internalCodeQueue->IsExecuting())
 	{
 		gb = internalCodeQueue->GetSource();
 	}
 
 	// Second UART device, e.g. dc42's PanelDue. Do NOT use emulation for this one!
-
 	if (gb == auxGCode)
 	{
 		// Discard this response if either no aux device is attached or if the response is empty
 		if (reply->Length() == 0 || !HaveAux())
 		{
-			while (reply != nullptr)
-			{
-				reply = reprap.ReleaseOutput(reply);
-			}
+			OutputBuffer::ReleaseAll(reply);
 			return;
 		}
 
@@ -2196,7 +2188,7 @@ void GCodes::HandleReply(GCodeBuffer *gb, bool error, OutputBuffer *reply)
 		return;
 	}
 
-	const Compatibility c = (gb == serialGCode || gb == telnetGCode) ? platform->Emulating() : me;
+	// Where do we need to send this reply?
 	MessageType type = GENERIC_MESSAGE;
 	if (gb == httpGCode)
 	{
@@ -2211,8 +2203,10 @@ void GCodes::HandleReply(GCodeBuffer *gb, bool error, OutputBuffer *reply)
 		type = HOST_MESSAGE;
 	}
 
+	// What kind of emulation should be used?
+	const Compatibility c = (gb == serialGCode || gb == telnetGCode) ? platform->Emulating() : me;
 	const char* response = (gb->Seen('M') && gb->GetIValue() == 998) ? "rs " : "ok";
-	const char* emulationType = 0;
+	const char* emulationType = nullptr;
 
 	switch (c)
 	{
@@ -2269,6 +2263,7 @@ void GCodes::HandleReply(GCodeBuffer *gb, bool error, OutputBuffer *reply)
 			}
 			else
 			{
+				OutputBuffer::ReleaseAll(reply);
 				platform->Message(type, response);
 				platform->Message(type, "\n");
 			}
@@ -2287,9 +2282,13 @@ void GCodes::HandleReply(GCodeBuffer *gb, bool error, OutputBuffer *reply)
 			emulationType = "unknown";
 	}
 
-	if (emulationType != 0)
+	// If we haven't sent the reply yet, free it here
+	OutputBuffer::ReleaseAll(reply);
+
+	if (emulationType != nullptr)
 	{
-		platform->MessageF(type, "Emulation of %s is not yet supported.\n", emulationType);	// don't send this one to the web as well, it concerns only the USB interface
+		// Don't send this one to the web as well, it concerns only the USB and Telnet interfaces
+		platform->MessageF(type, "Emulation of %s is not yet supported.\n", emulationType);
 	}
 }
 
@@ -2682,7 +2681,15 @@ bool GCodes::HandleGcode(GCodeBuffer* gb)
 			break;
 
 		case 30: // Z probe/manually set at a position and set that as point P
-			result = SetSingleZProbeAtAPosition(gb, reply);
+			if (reprap.GetMove()->IsDeltaMode() && !AllAxesAreHomed())
+			{
+				reply.copy("Must home a delta printer before bed probing\n");
+				error = true;
+			}
+			else
+			{
+				result = SetSingleZProbeAtAPosition(gb, reply);
+			}
 			break;
 
 		case 31: // Return the probe value, or set probe variables
@@ -2882,7 +2889,7 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 				}
 				else
 				{
-					if (!reprap.AllocateOutput(fileResponse))
+					if (!OutputBuffer::Allocate(fileResponse))
 					{
 						// Cannot allocate an output buffer, try again later
 						return false;
@@ -3062,7 +3069,11 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			}
 			isResuming = isPaused = false;
 
-			// Set the file for printing once again
+			// Resume printing
+			for (size_t i = 0; i < NUM_FANS; ++i)
+			{
+				platform->SetFanValue(i, pausedFanValues[i]);
+			}
 			fileBeingPrinted.MoveFrom(fileToPrint);
 			fractionOfFilePrinted = -1.0;
 
@@ -3154,6 +3165,10 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 						pauseCoordinates[DRIVES] = moveBuffer[DRIVES];
 					}
 
+					for (size_t i = 0; i < NUM_FANS; ++i)
+					{
+						pausedFanValues[i] = platform->GetFanValue(i);
+					}
 					fractionOfFilePrinted = fileBeingPrinted.FractionRead();
 					fileToPrint.MoveFrom(fileBeingPrinted);
 
@@ -3312,7 +3327,11 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 				int pin = gb->GetIValue();
 				if(gb->Seen('S'))
 				{
-					platform->SetOutputPin(pin, gb->GetIValue());
+					int val = gb->GetIValue();
+					if (!platform->SetOutputPin(pin, val))
+					{
+						platform->MessageF(GENERIC_MESSAGE, "Setting pin %d to %d is not supported\n", pin, val);
+					}
 				}
 				else
 				{
@@ -3520,6 +3539,12 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			break;
 
 		case 106: // Set/report fan values
+			if (NUM_FANS == 0)
+			{
+				reply.copy("No fans have been configured in the firmware!\n");
+				error = true;
+			}
+			else
 			{
 				bool seen = false;
 				int fanNumber = 0;
@@ -3527,10 +3552,10 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 				if (gb->Seen('P'))		// Choose fan number
 				{
 					fanNumber = gb->GetIValue();
-					if (fanNumber < 0 || fanNumber > 1)
+					if (fanNumber < 0 || fanNumber >= (int)NUM_FANS)
 					{
 						error = true;
-						reply.printf("Fan value: %i is invalid, 0 or 1 are valid\n", fanNumber);
+						reply.printf("Fan index %i is invalid, 0..%i are valid\n", fanNumber, NUM_FANS - 1);
 						break;
 					}
 				}
@@ -3547,29 +3572,44 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 					seen = true;
 				}
 
-				float f = (fanNumber == 0) ? lastFan0Value : lastFan1Value;
-				if (gb->Seen('S'))		// Set new fan value
+				if (gb->Seen('T'))		// Set thermostatic trigger temperature
 				{
-					f = gb->GetFValue();
+					seen = true;
+					platform->SetTriggerTemperature(fanNumber, gb->GetFValue());
+				}
+
+				if (gb->Seen('H'))		// Set thermostatically-controller heaters
+				{
+					seen = true;
+					long heaters[HEATERS];
+					unsigned int numH = HEATERS;
+					gb->GetLongArray(heaters, numH);
+					// Note that M106 H-1 disables thermostatic mode. The following code implements that automatically.
+					uint16_t hh = 0;
+					for (unsigned int h = 0; h < numH; ++h)
+					{
+						const int hnum = heaters[h];
+						if (hnum >= 0 && hnum < HEATERS)
+						{
+							hh |= (1 << (unsigned int)hnum);
+						}
+					}
+					platform->SetHeatersMonitored(fanNumber, hh);
+				}
+
+				if (gb->Seen('S'))		// Set new fan value - process this after processing 'H' or it may not be acted on
+				{
+					float f = gb->GetFValue();
 					f = min<float>(f, 255.0);
 					f = max<float>(f, 0.0);
 					seen = true;
+					platform->SetFanValue(fanNumber, f);
 				}
-
-				if (gb->Seen('R'))		// Restore last-known fan value
+				else if (gb->Seen('R'))
 				{
 					seen = true;
+					platform->SetFanValue(fanNumber, pausedFanValues[fanNumber]);
 				}
-				else if (fanNumber == 0)
-				{
-					lastFan0Value = f;
-				}
-				else
-				{
-					lastFan1Value = f;
-				}
-
-				platform->SetFanValue(fanNumber, f);
 
 				if (!seen)
 				{
@@ -3583,6 +3623,12 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			break;
 
 		case 107: // Fan off - deprecated
+			if (NUM_FANS == 0)
+			{
+				reply.copy("No fans have been configured in the firmware!\n");
+				error = true;
+			}
+			else
 			{
 				int fanNumber = 0;
 				if (gb->Seen('P'))
@@ -3781,7 +3827,7 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 				}
 				else
 				{
-					platform->DiagnosticTest(val);
+					platform->DiagnosticTest((DiagnosticTestType)val);
 				}
 			}
 			break;
@@ -4300,6 +4346,7 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 
 				if (statusResponse != nullptr)
 				{
+					statusResponse->cat('\n');
 					HandleReply(gb, false, statusResponse);
 					return true;
 				}
@@ -4326,7 +4373,7 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			{
 				// Need a valid output buffer to continue...
 				OutputBuffer *configResponse;
-				if (!reprap.AllocateOutput(configResponse))
+				if (!OutputBuffer::Allocate(configResponse))
 				{
 					// No buffer available, try again later
 					return false;
@@ -4342,7 +4389,7 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 				else
 				{
 					char fileBuffer[FILE_BUFFER_SIZE];
-					size_t bytesRead, bytesLeftForWriting = reprap.GetOutputBytesLeft(configResponse);
+					size_t bytesRead, bytesLeftForWriting = OutputBuffer::GetBytesLeft(configResponse);
 					while ((bytesRead = f->Read(fileBuffer, FILE_BUFFER_SIZE)) > 0 && bytesLeftForWriting > 0)
 					{
 						// Don't write more data than we can process
@@ -4797,16 +4844,17 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			break;
 
 		case 572: // Set/report elastic compensation
-			if (gb->Seen('P'))
+			if (gb->Seen('D'))
 			{
-				size_t drive = gb->GetIValue();
+				// New usage: specify the extruder drive using the D parameter
+				size_t extruder = gb->GetIValue();
 				if (gb->Seen('S'))
 				{
-					platform->SetElasticComp(drive, gb->GetFValue());
+					platform->SetElasticComp(extruder, gb->GetFValue());
 				}
 				else
 				{
-					reply.printf("Elastic compensation for drive %u is %.3f seconds\n", drive, platform->GetElasticComp(drive));
+					reply.printf("Elastic compensation for extruder %u is %.3f seconds\n", extruder, platform->GetElasticComp(extruder));
 				}
 			}
 			break;
@@ -5128,7 +5176,12 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 					params.SetEndstopAdjustment(Z_AXIS, gb->GetFValue());
 					seen = true;
 				}
-				if (!seen)
+
+				if (seen)
+				{
+					SetAllAxesNotHomed();
+				}
+				else
 				{
 					reply.printf("Endstop adjustments X%.2f Y%.2f Z%.2f\n",
 							params.GetEndstopAdjustment(X_AXIS), params.GetEndstopAdjustment(Y_AXIS), params.GetEndstopAdjustment(Z_AXIS));
@@ -5313,9 +5366,9 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			result = DoDwellTime(0.5);		// wait half a second to allow the response to be sent back to the web server, otherwise it may retry
 			if (result)
 			{
-				uint16_t reason = (gb->Seen('P') && StringStartsWith(gb->GetString(), "ERASE"))
-									? SoftwareResetReason::erase
-									: SoftwareResetReason::user;
+				SoftwareResetReason reason = (gb->Seen('P') && StringStartsWith(gb->GetString(), "ERASE"))
+					? SoftwareResetReason::erase
+					: SoftwareResetReason::user;
 				platform->SoftwareReset(reason);			// doesn't return
 			}
 			break;

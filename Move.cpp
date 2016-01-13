@@ -59,7 +59,7 @@ void Move::Init()
 	SetLiveCoordinates(move);
 	SetPositions(move);
 
-	currentFeedrate = DEFAULT_FEEDRATE;
+	currentFeedrate = DEFAULT_FEEDRATE / MINUTES_TO_SECONDS;
 
 	// Set up default bed probe points. This is only a guess, because we don't know the bed size yet.
 	for (size_t point = 0; point < MAX_PROBE_POINTS; point++)
@@ -127,6 +127,7 @@ void Move::Spin()
 				ddaRingCheckPointer->DebugPrint();
 			}
 			++stepErrors;
+			reprap.GetPlatform()->RecordError(ErrorCode::BadMove);
 		}
 		ddaRingCheckPointer->Free();
 		ddaRingCheckPointer = ddaRingCheckPointer->GetNext();
@@ -1356,9 +1357,9 @@ void Move::ResetRawExtruderTotals()
 	cpu_irq_enable();
 }
 
-void Move::SetXBedProbePoint(int index, float x)
+void Move::SetXBedProbePoint(size_t index, float x)
 {
-	if(index < 0 || (size_t)index >= MAX_PROBE_POINTS)
+	if (index >= MAX_PROBE_POINTS)
 	{
 		reprap.GetPlatform()->Message(GENERIC_MESSAGE, "Z probe point X index out of range.\n");
 		return;
@@ -1367,9 +1368,9 @@ void Move::SetXBedProbePoint(int index, float x)
 	probePointSet[index] |= xSet;
 }
 
-void Move::SetYBedProbePoint(int index, float y)
+void Move::SetYBedProbePoint(size_t index, float y)
 {
-	if(index < 0 || (size_t)index >= MAX_PROBE_POINTS)
+	if (index >= MAX_PROBE_POINTS)
 	{
 		reprap.GetPlatform()->Message(GENERIC_MESSAGE, "Z probe point Y index out of range.\n");
 		return;
@@ -1378,9 +1379,9 @@ void Move::SetYBedProbePoint(int index, float y)
 	probePointSet[index] |= ySet;
 }
 
-void Move::SetZBedProbePoint(int index, float z, bool wasXyCorrected, bool wasError)
+void Move::SetZBedProbePoint(size_t index, float z, bool wasXyCorrected, bool wasError)
 {
-	if (index < 0 || (size_t)index >= MAX_PROBE_POINTS)
+	if (index >= MAX_PROBE_POINTS)
 	{
 		reprap.GetPlatform()->Message(GENERIC_MESSAGE, "Z probe point Z index out of range.\n");
 	}
@@ -1407,36 +1408,36 @@ void Move::SetZBedProbePoint(int index, float z, bool wasXyCorrected, bool wasEr
 	}
 }
 
-float Move::XBedProbePoint(int index) const
+float Move::XBedProbePoint(size_t index) const
 {
 	return xBedProbePoints[index];
 }
 
-float Move::YBedProbePoint(int index) const
+float Move::YBedProbePoint(size_t index) const
 {
 	return yBedProbePoints[index];
 }
 
-float Move::ZBedProbePoint(int index) const
+float Move::ZBedProbePoint(size_t index) const
 {
 	return zBedProbePoints[index];
 }
 
-bool Move::AllProbeCoordinatesSet(int index) const
+bool Move::AllProbeCoordinatesSet(size_t index) const
 {
 	return (probePointSet[index] & (xSet | ySet | zSet)) == (xSet | ySet | zSet);
 }
 
-bool Move::XYProbeCoordinatesSet(int index) const
+bool Move::XYProbeCoordinatesSet(size_t index) const
 {
 	return (probePointSet[index]  & xSet) && (probePointSet[index]  & ySet);
 }
 
-int Move::NumberOfProbePoints() const
+size_t Move::NumberOfProbePoints() const
 {
-	for(int i = 0; (size_t)i < MAX_PROBE_POINTS; i++)
+	for(size_t i = 0; i < MAX_PROBE_POINTS; i++)
 	{
-		if(!AllProbeCoordinatesSet(i))
+		if (!AllProbeCoordinatesSet(i))
 		{
 			return i;
 		}
@@ -1444,11 +1445,11 @@ int Move::NumberOfProbePoints() const
 	return MAX_PROBE_POINTS;
 }
 
-int Move::NumberOfXYProbePoints() const
+size_t Move::NumberOfXYProbePoints() const
 {
-	for(int i = 0; (size_t)i < MAX_PROBE_POINTS; i++)
+	for(size_t i = 0; i < MAX_PROBE_POINTS; i++)
 	{
-		if(!XYProbeCoordinatesSet(i))
+		if (!XYProbeCoordinatesSet(i))
 		{
 			return i;
 		}

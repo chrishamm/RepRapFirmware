@@ -63,7 +63,7 @@ $CXX = "$GCC_PATH\bin\$($CROSS_COMPILE)g++.exe"
 $LD = "$GCC_PATH\bin\$($CROSS_COMPILE)gcc.exe"
 $OBJCOPY = "$GCC_PATH\bin\$($CROSS_COMPILE)objcopy.exe"
 
-$INCLUDES = @("$(Get-Location)\Libraries\Flash", "$(Get-Location)\Libraries\EMAC", "$(Get-Location)\Libraries\Lwip", "$(Get-Location)\Libraries\MCP4461", "$(Get-Location)\Libraries\SD_HSMCI", "$(Get-Location)\Libraries\SD_HSMCI\utility", "$(Get-Location)\Libraries\Wire")
+$INCLUDES = @("$(Get-Location)\Libraries\Flash", "$(Get-Location)\Libraries\EMAC", "$(Get-Location)\Libraries\Lwip", "$(Get-Location)\Libraries\MAX31855", "$(Get-Location)\Libraries\MCP4461", "$(Get-Location)\Libraries\SD_HSMCI", "$(Get-Location)\Libraries\SD_HSMCI\utility", "$(Get-Location)\Libraries\SPI", "$(Get-Location)\Libraries\Wire")
 $INCLUDES += @("$DUET_BOARD_PATH\cores\arduino", "$DUET_BOARD_PATH\variants\duet")
 $INCLUDES += @("$DUET_BOARD_PATH\system\libsam", "$DUET_BOARD_PATH\system\libsam\include", "$DUET_BOARD_PATH\system\CMSIS\CMSIS\Include", "$DUET_BOARD_PATH\system\CMSIS\Device\ATMEL")
 
@@ -79,7 +79,7 @@ $LDFLAGS_A = "$OPTIMIZATION -Wl,--gc-sections -mcpu=cortex-m3 `"-T$DUET_BOARD_PA
 $LDFLAGS_B = "`"$DUET_BOARD_PATH\variants\duet\libsam_sam3x8e_gcc_rel.a`" -lm -lgcc -Wl,--end-group"
 
 $SOURCEPATHS = @("$DUET_BOARD_PATH\cores\arduino", "$DUET_BOARD_PATH\cores\arduino\USB", "$DUET_BOARD_PATH\variants\duet")
-$SOURCEPATHS += @("$(Get-Location)\Libraries\EMAC", "$(Get-Location)\Libraries\Flash", "$(Get-Location)\Libraries\Lwip\contrib\apps\netbios", "$(Get-Location)\Libraries\Lwip\lwip\src\api", "$(Get-Location)\Libraries\Lwip\lwip\src\core", "$(Get-Location)\Libraries\Lwip\lwip\src\core\ipv4", "$(Get-Location)\Libraries\Lwip\lwip\src\netif", "$(Get-Location)\Libraries\Lwip\lwip\src\sam\netif", "$(Get-Location)\Libraries\MCP4461", "$(Get-Location)\Libraries\SD_HSMCI\utility", "$(Get-Location)\Libraries\Wire")
+$SOURCEPATHS += @("$(Get-Location)\Libraries\EMAC", "$(Get-Location)\Libraries\Flash", "$(Get-Location)\Libraries\Lwip\contrib\apps\netbios", "$(Get-Location)\Libraries\Lwip\lwip\src\api", "$(Get-Location)\Libraries\Lwip\lwip\src\core", "$(Get-Location)\Libraries\Lwip\lwip\src\core\ipv4", "$(Get-Location)\Libraries\Lwip\lwip\src\netif", "$(Get-Location)\Libraries\Lwip\lwip\src\sam\netif", "$(Get-Location)\Libraries\MAX31855", "$(Get-Location)\Libraries\MCP4461", "$(Get-Location)\Libraries\SD_HSMCI\utility", "$(Get-Location)\Libraries\SPI", "$(Get-Location)\Libraries\Wire")
 
 $C_SOURCES = $SOURCEPATHS | % { $(Get-ChildItem "$_\*.c") | % { "$_" } }
 $C_SOURCES += Get-ChildItem "$(Get-Location)\*.c" | % { "$_" }

@@ -34,10 +34,6 @@ Licence: GPL
 #ifndef PLATFORM_H
 #define PLATFORM_H
 
-// What are we supposed to be running on
-
-#define ELECTRONICS "Duet (+ Extension)"
-
 // Language-specific includes
 
 #include <cctype>
@@ -49,91 +45,65 @@ Licence: GPL
 // Platform-specific includes
 
 #include "Arduino.h"
+#include "OutputMemory.h"
 #include "SD_HSMCI.h"
+#include "MAX31855.h"
 #include "MCP4461.h"
 
-// Firmware-specific includes
-
-#include "Configuration.h"
-#include "RepRapFirmware.h"
-
-/**************************************************************************************************/
+// Definitions needed by Pins.h
 
 typedef int8_t Pin;										// Type used to represent a pin number, negative means no pin
 
-// Hardware-dependent timing
+const bool FORWARDS = true;
+const bool BACKWARDS = !FORWARDS;
 
-static const float TIME_TO_REPRAP = 1.0e6;				// Convert seconds to the units used by the machine (usually microseconds)
-static const float TIME_FROM_REPRAP = 1.0e-6;			// Convert the units used by the machine (usually microseconds) to seconds
+#include "Pins.h"
 
-// The physical capabilities of the machine
+/**************************************************************************************************/
+ 
+// Some numbers...
 
-static const size_t DRIVES = 9;							// The number of drives in the machine, including X, Y, and Z plus extruder drives
-static const size_t AXES = 3;							// The number of movement axes in the machine, usually just X, Y and Z. <= DRIVES
-static const int HEATERS = 7;							// The number of heaters in the machine; 0 is the heated bed even if there isn't one
-static const size_t NUM_SERIAL_CHANNELS = 3;			// The number of serial IO channels (USB and two auxiliary UARTs)
+const float TIME_TO_REPRAP = 1.0e6;				// Convert seconds to the units used by the machine (usually microseconds)
+const float TIME_FROM_REPRAP = 1.0e-6;			// Convert the units used by the machine (usually microseconds) to seconds
 
-// The numbers of entries in each array must correspond with the values of DRIVES,
-// AXES, or HEATERS. Set values to -1 to flag unavailability.
-
+/**************************************************************************************************/
 
 // DRIVES
 
-static const Pin ENABLE_PINS[DRIVES] = { 29, 27, X1, X0, 37, X8, 50, 47, X13 };
-static const bool ENABLE_VALUES[DRIVES] = { false, false, false, false, false, false, false, false, false };	// what to send to enable a drive
-static const Pin STEP_PINS[DRIVES] = { 14, 25, 5, X2, 41, 39, X4, 49, X10 };
-static const Pin DIRECTION_PINS[DRIVES] = { 15, 26, 4, X3, 35, 53, 51, 48, X11 };
+const float DEFAULT_IDLE_CURRENT_FACTOR = 0.3;							// Proportion of normal motor current that we use for idle hold
 
-static const float DEFAULT_IDLE_CURRENT_FACTOR = 0.3;	// Proportion of normal motor current that we use for idle hold
+const int ENDSTOP_HIT = HIGH;
 
-static const Pin END_STOP_PINS[DRIVES] = { 11, 28, 60, 31, 24, 46, 45, 44, X9 };
-static const int ENDSTOP_HIT = HIGH;
+const float MAX_FEEDRATES[DRIVES] = DRIVES_( 100.0, 100.0, 3.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0 );						// mm/sec
+const float ACCELERATIONS[DRIVES] = DRIVES_( 500.0, 500.0, 20.0, 250.0, 250.0, 250.0, 250.0, 250.0, 250.0 );				// mm/sec^2
+const float DRIVE_STEPS_PER_UNIT[DRIVES] = DRIVES_( 87.4890, 87.4890, 4000.0, 420.0, 420.0, 420.0, 420.0, 420.0, 420.0 );	// steps/mm
+const float INSTANT_DVS[DRIVES] = DRIVES_( 15.0, 15.0, 0.2, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0 );								// mm/sec
 
-static const bool FORWARDS = true;
-static const bool BACKWARDS = !FORWARDS;
-static const bool DIRECTIONS[DRIVES] = { BACKWARDS, FORWARDS, FORWARDS, FORWARDS, FORWARDS, FORWARDS, FORWARDS, FORWARDS, FORWARDS };		// What each axis needs to make it go forwards - defaults
-
-// Indices for motor current digipots (if any): First 4 are for digipot 1 (on duet), second 4 for digipot 2 (on expansion board)
-static const uint8_t POT_WIPES[DRIVES] = { 1, 3, 2, 0, 1, 3, 2, 0 };			// Only define as many entries as DRIVES are defined
-static const float SENSE_RESISTOR = 0.1;										// Stepper motor current sense resistor
-static const float MAX_STEPPER_DIGIPOT_VOLTAGE = (3.3 * 2.5 / (2.7 + 2.5));		// Stepper motor current reference voltage
-static const float MAX_STEPPER_DAC_VOLTAGE = 2.12;								// Stepper motor current reference voltage for E1 if using a DAC
-
-static const float MAX_FEEDRATES[DRIVES] = { 100.0, 100.0, 3.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0 };						// mm/sec
-static const float ACCELERATIONS[DRIVES] = { 500.0, 500.0, 20.0, 250.0, 250.0, 250.0, 250.0, 250.0, 250.0 };				// mm/sec^2
-static const float DRIVE_STEPS_PER_UNIT[DRIVES] = { 87.4890, 87.4890, 4000.0, 420.0, 420.0, 420.0, 420.0, 420.0, 420.0 };	// steps/mm
-static const float INSTANT_DVS[DRIVES] = { 15.0, 15.0, 0.2, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0 };									// mm/sec
-
-static const size_t E0_DRIVE = 3;
-static const size_t E1_DRIVE = 4;
-static const size_t E2_DRIVE = 5;
-static const size_t E3_DRIVE = 6;
-static const size_t E4_DRIVE = 7;
-static const size_t E5_DRIVE = 8;
+const size_t E0_DRIVE = 3;
+const size_t E1_DRIVE = 4;
+const size_t E2_DRIVE = 5;
+const size_t E3_DRIVE = 6;
+const size_t E4_DRIVE = 7;
+const size_t E5_DRIVE = 8;
 
 // AXES
 
-static const size_t X_AXIS = 0, Y_AXIS = 1, Z_AXIS = 2, E0_AXIS = 3;		// The indices of the Cartesian axes in drive arrays
-static const size_t A_AXIS = 0, B_AXIS = 1, C_AXIS = 2;						// The indices of the 3 tower motors of a delta printer in drive arrays
+const size_t X_AXIS = 0, Y_AXIS = 1, Z_AXIS = 2;					// The indices of the Cartesian axes in drive arrays
+const size_t A_AXIS = 0, B_AXIS = 1, C_AXIS = 2;					// The indices of the 3 tower motors of a delta printer in drive arrays
 
-static const float AXIS_MINIMA[AXES] = { 0.0, 0.0, 0.0 };					// mm
-static const float AXIS_MAXIMA[AXES] = { 230.0, 210.0, 200.0 };				// mm
+const float AXIS_MINIMA[AXES] = { 0.0, 0.0, 0.0 };					// mm
+const float AXIS_MAXIMA[AXES] = { 230.0, 210.0, 200.0 };			// mm
 
-static const float DEFAULT_PRINT_RADIUS = 50.0;								// mm
-static const float DEFAULT_DELTA_HOMED_HEIGHT = 200.0;						// mm
+const float DEFAULT_PRINT_RADIUS = 50.0;							// mm
+const float DEFAULT_DELTA_HOMED_HEIGHT = 200.0;						// mm
 
 // HEATERS
 
-static const bool HEAT_ON = false;											// false for inverted heater (eg Duet v0.6), true for not (e.g. Duet v0.4)
-
-static const Pin TEMP_SENSE_PINS[HEATERS] = { 5, 4, 0, 7, 8, 9, 11 };	// Analogue pin numbers
-static const Pin HEAT_ON_PINS[HEATERS] = { 6, X5, X7, 7, 8, 9, -1 };		// Heater Channel 7 (pin X17) is shared with Fan1. Only define 1 or the other
-
 // Bed thermistor: http://uk.farnell.com/epcos/b57863s103f040/sensor-miniature-ntc-10k/dp/1299930?Ntt=129-9930
 // Hot end thermistor: http://www.digikey.co.uk/product-search/en?x=20&y=11&KeyWords=480-3137-ND
-static const float DEFAULT_THERMISTOR_BETAS[HEATERS] = { 3988.0, 4138.0, 4138.0, 4138.0, 4138.0, 4138.0, 4138.0 };				// Bed thermistor: B57861S104F40; Extruder thermistor: RS 198-961
-static const float DEFAULT_THERMISTOR_SERIES_RS[HEATERS] = { 1000.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0 };			// Ohms in series with the thermistors
-static const float DEFAULT_THERMISTOR_25_RS[HEATERS] = { 10000.0, 100000.0, 100000.0, 100000.0, 100000.0, 100000.0, 100000.0 };	// Thermistor ohms at 25 C = 298.15 K
+const float DEFAULT_THERMISTOR_BETAS[HEATERS] = HEATERS_( 3988.0, 4138.0, 4138.0, 4138.0, 4138.0, 4138.0, 4138.0 );					// Bed thermistor: B57861S104F40; Extruder thermistor: RS 198-961
+const float DEFAULT_THERMISTOR_SERIES_RS[HEATERS] = HEATERS_( 1000.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0 );				// Ohms in series with the thermistors
+const float DEFAULT_THERMISTOR_25_RS[HEATERS] = HEATERS_( 10000.0, 100000.0, 100000.0, 100000.0, 100000.0, 100000.0, 100000.0 );	// Thermistor ohms at 25 C = 298.15 K
 
 // Note on hot end PID parameters:
 // The system is highly nonlinear because the heater power is limited to a maximum value and cannot go negative.
@@ -158,124 +128,94 @@ static const float DEFAULT_THERMISTOR_25_RS[HEATERS] = { 10000.0, 100000.0, 1000
 // This allows us to switch between PID and bang-bang using the M301 and M304 commands.
 
 // We use method 2 (see above)
-static const float DEFAULT_PID_KIS[HEATERS] = { 5.0, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2 };				// Integral PID constants
-static const float DEFAULT_PID_KDS[HEATERS] = { 500.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0 };	// Derivative PID constants
-const float DEFAULT_PID_KPS[HEATERS] = { -1.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0 };				// Proportional PID constants, negative values indicate use bang-bang instead of PID
-static const float DEFAULT_PID_KTS[HEATERS] = { 2.7, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4 };				// Approximate PWM value needed to maintain temperature, per degC above room temperature
-static const float DEFAULT_PID_KSS[HEATERS] = { 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 };				// PWM scaling factor, to allow for variation in heater power and supply voltage
-static const float DEFAULT_PID_FULLBANDS[HEATERS] = { 5.0, 30.0, 30.0, 30.0, 30.0, 30.0, 30.0 };	// Errors larger than this cause heater to be on or off
-static const float DEFAULT_PID_MINS[HEATERS] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };				// Minimum value of I-term
-const float DEFAULT_PID_MAXES[HEATERS] = { 255.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0 };		// Maximum value of I-term, must be high enough to reach 245C for ABS printing
+const float DEFAULT_PID_KIS[HEATERS] = HEATERS_( 5.0, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2 );					// Integral PID constants
+const float DEFAULT_PID_KDS[HEATERS] = HEATERS_( 500.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0 );		// Derivative PID constants
+const float DEFAULT_PID_KPS[HEATERS] = HEATERS_( -1.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0 );			// Proportional PID constants, negative values indicate use bang-bang instead of PID
+const float DEFAULT_PID_KTS[HEATERS] = HEATERS_( 2.7, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4 );					// Approximate PWM value needed to maintain temperature, per degC above room temperature
+const float DEFAULT_PID_KSS[HEATERS] = HEATERS_( 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 );					// PWM scaling factor, to allow for variation in heater power and supply voltage
+const float DEFAULT_PID_FULLBANDS[HEATERS] = HEATERS_( 5.0, 30.0, 30.0, 30.0, 30.0, 30.0, 30.0 );		// Errors larger than this cause heater to be on or off
+const float DEFAULT_PID_MINS[HEATERS] = HEATERS_( 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 );					// Minimum value of I-term
+const float DEFAULT_PID_MAXES[HEATERS] = HEATERS_( 255.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0 );	// Maximum value of I-term, must be high enough to reach 245C for ABS printing
 
-static const float STANDBY_TEMPERATURES[HEATERS] = { ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO }; // We specify one for the bed, though it's not needed
-static const float ACTIVE_TEMPERATURES[HEATERS] = { ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO };
+const float STANDBY_TEMPERATURES[HEATERS] = HEATERS_( ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO ); // We specify one for the bed, though it's not needed
+const float ACTIVE_TEMPERATURES[HEATERS] = HEATERS_( ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO );
 
-static const int8_t BED_HEATER = 0;						// Index of the heated bed
-static const int8_t E0_HEATER = 1;						// Index of the first extruder heater
-static const int8_t E1_HEATER = 2;						// Index of the second extruder heater
-static const int8_t E2_HEATER = 3;						// Index of the third extruder heater
-static const int8_t E3_HEATER = 4;						// Index of the fourth extruder heater
-static const int8_t E4_HEATER = 5;						// Index of the fifth extruder heater
-static const int8_t E5_HEATER = 6;						// Index of the sixth extruder heater
-
-// COOLING FAN
-
-static const size_t NUM_FANS = 2;
-static const Pin COOLING_FAN_PINS[NUM_FANS] = { X6, X17 };
-static const Pin COOLING_FAN_RPM_PIN = 23;
+const int8_t BED_HEATER = 0;					// Index of the heated bed
+const int8_t E0_HEATER = 1;						// Index of the first extruder heater
+const int8_t E1_HEATER = 2;						// Index of the second extruder heater
+const int8_t E2_HEATER = 3;						// Index of the third extruder heater
+const int8_t E3_HEATER = 4;						// Index of the fourth extruder heater
+const int8_t E4_HEATER = 5;						// Index of the fifth extruder heater
+const int8_t E5_HEATER = 6;						// Index of the sixth extruder heater
 
 // AD CONVERSION
 
 // For the theory behind ADC oversampling, see http://www.atmel.com/Images/doc8003.pdf
-static const unsigned int AD_OVERSAMPLE_BITS = 1;		// Number of bits we oversample when reading temperatures
+const unsigned int AD_OVERSAMPLE_BITS = 1;		// Number of bits we oversample when reading temperatures
 
 // Define the number of temperature readings we average for each thermistor. This should be a power of 2 and at least 4 ** AD_OVERSAMPLE_BITS.
 // Keep THERMISTOR_AVERAGE_READINGS * HEATERS * 2ms no greater than HEAT_SAMPLE_TIME or the PIDs won't work well.
-static const unsigned int THERMISTOR_AVERAGE_READINGS = 32;
-static const unsigned int AD_RANGE_REAL = 4095;													// The ADC that measures temperatures gives an int this big as its max value
-static const unsigned int AD_RANGE_VIRTUAL = ((AD_RANGE_REAL + 1) << AD_OVERSAMPLE_BITS) - 1;	// The max value we can get using oversampling
-static const unsigned int AD_DISCONNECTED_REAL = AD_RANGE_REAL - 3;								// We consider an ADC reading at/above this value to indicate that the thermistor is disconnected
-static const unsigned int AD_DISCONNECTED_VIRTUAL = AD_DISCONNECTED_REAL << AD_OVERSAMPLE_BITS;
+const unsigned int THERMISTOR_AVERAGE_READINGS = 32;
+const unsigned int AD_RANGE_REAL = 4095;												// The ADC that measures temperatures gives an int this big as its max value
+const unsigned int AD_RANGE_VIRTUAL = ((AD_RANGE_REAL + 1) << AD_OVERSAMPLE_BITS) - 1;	// The max value we can get using oversampling
+const unsigned int AD_DISCONNECTED_REAL = AD_RANGE_REAL - 3;							// We consider an ADC reading at/above this value to indicate that the thermistor is disconnected
+const unsigned int AD_DISCONNECTED_VIRTUAL = AD_DISCONNECTED_REAL << AD_OVERSAMPLE_BITS;
 
+const float maxPidSpinDelay = 5.0;				// Maximum elapsed time between successive temp samples by Pid::Spin() permitted for a temp sensor (units of seconds)
 
 // Z PROBE
 
-static const int Z_PROBE_AD_VALUE = 400;						// Default for the Z probe - should be overwritten by experiment
-static const float Z_PROBE_STOP_HEIGHT = 0.7;					// Millimetres
-static const Pin Z_PROBE_PIN = 10;								// Analogue pin number
-static const Pin Z_PROBE_MOD_PIN = 52;							// Digital pin number to turn the IR LED on (high) or off (low) on Duet v0.6 and v1.0 (PB21)
-static const Pin Z_PROBE_MOD_PIN07 = X12;						// Digital pin number to turn the IR LED on (high) or off (low) on Duet v0.7 and v0.8.5 (PC10)
-static const bool Z_PROBE_AXES[AXES] = { true, false, true };	// Axes for which the Z-probe is normally used
-static const unsigned int Z_PROBE_AVERAGE_READINGS = 8;			// We average this number of readings with IR on, and the same number with IR off
+const int Z_PROBE_AD_VALUE = 400;						// Default for the Z probe - should be overwritten by experiment
+const float Z_PROBE_STOP_HEIGHT = 0.7;					// Millimetres
+const bool Z_PROBE_AXES[AXES] = { true, false, true };	// Axes for which the Z-probe is normally used
+const unsigned int Z_PROBE_AVERAGE_READINGS = 8;		// We average this number of readings with IR on, and the same number with IR off
 
 // Inkjet (if any - no inkjet is flagged by INKJET_BITS negative)
 
-static const int8_t INKJET_BITS = 12;							// How many nozzles? Set to -1 to disable this feature
-static const int INKJET_FIRE_MICROSECONDS = 5;					// How long to fire a nozzle
-static const int INKJET_DELAY_MICROSECONDS = 800;				// How long to wait before the next bit
-
-// Inkjet control pins
-
-static const Pin INKJET_SERIAL_OUT = 65;						// Serial bitpattern into the shift register
-static const Pin INKJET_SHIFT_CLOCK = 20;						// Shift the register
-static const Pin INKJET_STORAGE_CLOCK = 67;						// Put the pattern in the output register
-static const Pin INKJET_OUTPUT_ENABLE = 66;						// Make the output visible
-static const Pin INKJET_CLEAR = 36;								// Clear the register to 0
+const int8_t INKJET_BITS = 12;							// How many nozzles? Set to -1 to disable this feature
+const int INKJET_FIRE_MICROSECONDS = 5;					// How long to fire a nozzle
+const int INKJET_DELAY_MICROSECONDS = 800;				// How long to wait before the next bit
 
 /****************************************************************************************************/
 
 // File handling
 
-static const size_t MAX_FILES = 10;				// Must be large enough to handle the max number of simultaneous web requests + files being printed
+const size_t MAX_FILES = 10;					// Must be large enough to handle the max number of simultaneous web requests + files being printed
 
-static const size_t FILE_BUFFER_SIZE = 256;
-static const size_t FILENAME_LENGTH = 100;
+const size_t FILE_BUFFER_SIZE = 256;
+const size_t FILENAME_LENGTH = 100;
 
-static const char *FS_PREFIX = "0:";
-static const char *WEB_DIR = "0:/www/";			// Place to find web files on the SD card
-static const char *GCODE_DIR = "0:/gcodes/";	// Ditto - G-Codes
-static const char *SYS_DIR = "0:/sys/";			// Ditto - System files
-static const char *MACRO_DIR = "0:/macros/";	// Ditto - Macro files
-
-static const uint8_t MAC_ADDRESS[6] = { 0xBE, 0xEF, 0xDE, 0xAD, 0xFE, 0xED };
+const uint8_t MAC_ADDRESS[6] = { 0xBE, 0xEF, 0xDE, 0xAD, 0xFE, 0xED };
 
 /****************************************************************************************************/
 
-// Miscellaneous...
+// Communication port settings
 
-const unsigned int USB_BAUD_RATE = 115200;		// Default communication speed of the USB if needed
+const unsigned int MAIN_BAUD_RATE = 115200;		// Default communication speed of the main port (USB) if needed
 const unsigned int AUX_BAUD_RATE = 57600;		// Ditto - for auxiliary UART device
 const unsigned int AUX2_BAUD_RATE = 115200;		// Ditto - for second auxiliary UART device
-
-const Pin ATX_POWER_PIN = 12;					// Arduino Due pin number that controls the ATX power on/off
 
 /***************************************************************************************************/
 
 // Enumeration describing the reasons for a software reset.
 // The spin state gets or'ed into this, so keep the lower ~4 bits unused.
-namespace SoftwareResetReason
+enum class SoftwareResetReason : uint16_t
 {
-	enum
-	{
-		user = 0,								// M999 command
-		erase = 55,								// Special M999 command to erase firmware and reset
-		inAuxOutput = 0x0800,					// This bit is or'ed in if we were in aux output at the time
-		stuckInSpin = 0x1000,					// We got stuck in a Spin() function for too long
-		inLwipSpin = 0x2000,					// We got stuck in a call to LWIP for too long
-		inUsbOutput = 0x4000					// This bit is or'ed in if we were in USB output at the time
-	};
-}
+	user = 0,								// M999 command
+	erase = 55,								// Special M999 command to erase firmware and reset
+	inAuxOutput = 0x0800,					// This bit is or'ed in if we were in aux output at the time
+	stuckInSpin = 0x1000,					// We got stuck in a Spin() function for too long
+	inLwipSpin = 0x2000,					// We got stuck in a call to LWIP for too long
+	inUsbOutput = 0x4000					// This bit is or'ed in if we were in USB output at the time
+};
 
 // Enumeration to describe various tests we do in response to the M111 command
-namespace DiagnosticTest
+enum class DiagnosticTestType : int
 {
-	enum
-	{
-		TestWatchdog = 1001,					// Test that we get a watchdog reset if the tick interrupt stops
-		TestSpinLockup = 1002,					// Test that we get a software reset if a Spin() function takes too long
-		TestSerialBlock = 1003					// Test what happens when we write a blocking message via debugPrintf()
-	};
-}
+	TestWatchdog = 1001,					// Test that we get a watchdog reset if the tick interrupt stops
+	TestSpinLockup = 1002,					// Test that we get a software reset if a Spin() function takes too long
+	TestSerialBlock = 1003					// Test what happens when we write a blocking message via debugPrintf()
+};
 
 /***************************************************************************************************/
 
@@ -325,7 +265,7 @@ class MassStorage
 // This class handles input from, and output to, files.
 
 typedef uint32_t FilePosition;
-static const FilePosition NO_FILE_POSITION = 0xFFFFFFFF;
+const FilePosition NO_FILE_POSITION = 0xFFFFFFFF;
 
 enum class IOStatus : uint8_t
 {
@@ -545,9 +485,10 @@ typedef AveragingFilter<THERMISTOR_AVERAGE_READINGS> ThermistorAveragingFilter;
 typedef AveragingFilter<Z_PROBE_AVERAGE_READINGS> ZProbeAveragingFilter;
 
 // Enumeration of error condition bits
-enum ErrorCode
+enum class ErrorCode : uint32_t
 {
-	ErrorBadTemp = (1 << 0)
+	BadTemp = 1 << 0,
+	BadMove = 1 << 1
 };
 
 // Different types of hardware-related input-output
@@ -614,6 +555,9 @@ class Platform
 		// Enumerations to describe the states of drives and endstops
 		enum class DriveStatus : uint8_t { disabled, idle, enabled };
 
+		// Error results generated by GetTemperature()
+		enum class TempError : uint8_t { errOk, errShort, errShortVcc, errShortGnd, errOpen, errTimeout, errIO };
+
 		// These are the functions that form the interface between Platform and the rest of the firmware.
 
 		void Init();										// Set the machine up after a restart.  If called subsequently this should set the machine up as if
@@ -624,9 +568,10 @@ class Platform
 		Compatibility Emulating() const;
 		void SetEmulating(Compatibility c);
 		void Diagnostics();
-		void DiagnosticTest(int d);
+		void DiagnosticTest(DiagnosticTestType d);
 		void ClassReport(float &lastTime);					// Called on Spin() return to check everything's live.
-		void SoftwareReset(uint16_t reason);
+		void RecordError(ErrorCode ec) { errorCodeBits |= (uint32_t)ec; }
+		void SoftwareReset(SoftwareResetReason reason);
 		bool AtxPower() const;
 		void SetAtxPower(bool on);
 		void SetBoardType(BoardType bt);
@@ -668,6 +613,8 @@ class Platform
 		const char* GetMacroDir() const;					// Where the user-defined macros are
 		const char* GetConfigFile() const;					// Where the configuration is stored (in the system dir).
 		const char* GetDefaultFile() const;					// Where the default configuration is stored (in the system dir).
+
+		void InvalidateFiles();								// Called to invalidate files when the SD card is removed
 
 		// Message output (see MessageType for further details)
 
@@ -715,8 +662,8 @@ class Platform
 		float AxisMinimum(size_t axis) const;
 		void SetAxisMinimum(size_t axis, float value);
 		float AxisTotalLength(size_t axis) const;
-		float GetElasticComp(size_t drive) const;
-		void SetElasticComp(size_t drive, float factor);
+		float GetElasticComp(size_t extruder) const;
+		void SetElasticComp(size_t extruder, float factor);
 		void SetEndStopConfiguration(size_t axis, EndStopType endstopType, bool logicLevel);
 		void GetEndStopConfiguration(size_t axis, EndStopType& endstopType, bool& logicLevel) const;
 
@@ -744,7 +691,7 @@ class Platform
 
 		// Heat and temperature
 
-		float GetTemperature(size_t heater) const;		// Result is in degrees Celsius
+		float GetTemperature(size_t heater, TempError* err = nullptr) const; // Result is in degrees Celsius
 		void SetHeater(size_t heater, float power);		// power is a fraction in [0,1]
 		float HeatSampleTime() const;
 		void SetHeatSampleTime(float st);
@@ -754,6 +701,10 @@ class Platform
 		void SetTimeToHot(float t);
 		void SetThermistorNumber(size_t heater, size_t thermistor);
 		int GetThermistorNumber(size_t heater) const;
+		bool DoThermistorAdc(uint8_t heater) const;
+		MAX31855 Max31855Devices[MAX31855_DEVICES];
+		static const char* TempErrorStr(TempError err);
+		static bool TempErrorPermanent(TempError err);
 
 		// Fans
 
@@ -763,6 +714,10 @@ class Platform
 		void SetCoolingInverted(size_t fan, bool inv);
 		float GetFanPwmFrequency(size_t fan) const;
 		void SetFanPwmFrequency(size_t fan, float freq);
+		float GetTriggerTemperature(size_t fan) const;
+		void SetTriggerTemperature(size_t fan, float t);
+		uint16_t GetHeatersMonitored(size_t fan) const;
+		void SetHeatersMonitored(size_t fan, uint16_t h);
 		float GetFanRPM();
 
 		// Flash operations
@@ -792,7 +747,7 @@ class Platform
 		// Only for use by the M579 command with extreme caution.  Don't use these
 		// for anything else.
 
-		void SetOutputPin(int pin, bool value);
+		bool SetOutputPin(int pin, int level);
 		bool GetInputPin(int pin);
 
 	private:
@@ -816,7 +771,9 @@ class Platform
 		struct Fan
 		{
 			float val;
+			float triggerTemperature;
 			uint16_t freq;
+			uint16_t heatersMonitored;
 			Pin pin;
 			bool inverted;
 			bool hardwareInverted;
@@ -825,6 +782,9 @@ class Platform
 			void SetValue(float speed);
 			void SetPwmFrequency(float p_freq);
 			void Refresh();
+			void SetTriggerTemperature(float t) { triggerTemperature = t; }
+			void SetHeatersMonitored(uint16_t h) { heatersMonitored = h; }
+			void Check();
 		};
 
 		struct FlashData
@@ -887,14 +847,14 @@ class Platform
 		float accelerations[DRIVES];
 		float driveStepsPerUnit[DRIVES];
 		float instantDvs[DRIVES];
-		float elasticComp[DRIVES];
+		float elasticComp[DRIVES - AXES];
 		float motorCurrents[DRIVES];
 		float idleCurrentFactor;
 		MCP4461 mcpDuet;
 		MCP4461 mcpExpansion;
 		size_t slowestDrive;
 
-		int8_t potWipes[DRIVES];
+		int8_t potWipes[8];
 		float senseResistor;
 		float maxStepperDigipotVoltage;
 		float maxStepperDACVoltage;
@@ -924,9 +884,11 @@ class Platform
 
 		int GetRawTemperature(size_t heater) const;
 		void SetHeaterPwm(size_t heater, uint8_t pwm);
+		bool AnyHeaterHot(uint16_t heaters, float t) const;				// called to see if we need to turn on the hot end fan
 
 		Pin tempSensePins[HEATERS];
 		Pin heatOnPins[HEATERS];
+		Pin max31855CsPins[MAX31855_DEVICES];
 		float heatSampleTime;
 		float standbyTemperatures[HEATERS];
 		float activeTemperatures[HEATERS];
@@ -943,9 +905,9 @@ class Platform
 
 		uint32_t baudRates[NUM_SERIAL_CHANNELS];
 		uint8_t commsParams[NUM_SERIAL_CHANNELS];
-		OutputBuffer * volatile auxOutputBuffer;
-		OutputBuffer * volatile aux2OutputBuffer;
-		OutputBuffer * volatile usbOutputBuffer;
+		OutputStack *auxOutput;
+		OutputStack *aux2Output;
+		OutputStack *usbOutput;
 
 		// Files
 
@@ -961,7 +923,39 @@ class Platform
 
 		// Data used by the tick interrupt handler
 
-		adc_channel_num_t heaterAdcChannels[HEATERS];
+		// Heater #n, 0 <= n < HEATERS, uses "temperature channel" tc given by
+		//
+		//     tc = heaterTempChannels[n]
+		//
+		// Temperature channels follow a convention of
+		//
+		//     if (0 <= tc < HEATERS) then
+		//        The temperature channel is a thermistor read using ADC.
+		//        The actual ADC to read for tc is
+		//
+		//            thermistorAdcChannel[tc]
+		//
+		//        which, is equivalent to
+		//
+		//            PinToAdcChannel(tempSensePins[tc])
+		//
+		//     if (100 <= tc < 100 + (MAX31855_DEVICES - 1)) then
+		//        The temperature channel is a thermocouple attached to a MAX31855 chip
+		//        The MAX31855 object corresponding to the specific MAX31855 chip is
+		//
+		//            Max31855Devices[tc - 100]
+		//
+		//       Note that the MAX31855 objects, although statically declared, are not
+		//       initialized until configured via a "M305 Pn X10m" command with 0 <= n < HEATERS
+		//       and 0 <= m < MAX31855_DEVICES.
+		//
+		// NOTE BENE: When a M305 command is processed, the onus is on the gcode processor,
+		// GCodes.cpp, to range check the value of the X parameter.  Code consuming the results
+		// of the M305 command (e.g., SetThermistorNumber() and array lookups assume range
+		// checking has already been performed.
+
+		uint8_t heaterTempChannels[HEATERS];
+		adc_channel_num_t thermistorAdcChannels[HEATERS];
 		adc_channel_num_t zProbeAdcChannel;
 		uint32_t thermistorOverheatSums[HEATERS];
 		uint8_t tickState;
@@ -987,6 +981,10 @@ class Platform
 		Pin inkjetStorageClock;
 		Pin inkjetOutputEnable;
 		Pin inkjetClear;
+
+		// Direct pin manipulation
+		static const uint8_t pinAccessAllowed[NUM_PINS_ALLOWED/8];
+		uint8_t pinInitialised[NUM_PINS_ALLOWED/8];
 };
 
 // Small class to hold an open file and data relating to it.
@@ -1308,6 +1306,19 @@ inline void Platform::SetTimeToHot(float t)
 	timeToHot = t;
 }
 
+inline bool Platform::DoThermistorAdc(uint8_t heater) const
+{
+	return heaterTempChannels[heater] < HEATERS;
+}
+
+// Indicate if a temp sensor error is a "permanent" error: whether it is an
+// error condition which will not rectify over time and so the heater should
+// just be shut off immediately.
+inline bool Platform::TempErrorPermanent(TempError err)
+{
+	return (err != TempError::errTimeout) && (err != TempError::errIO) && (err != TempError::errOk);
+}
+
 inline bool Platform::GCodeAvailable(const SerialSource source) const
 {
 	switch (source)
@@ -1362,9 +1373,9 @@ inline const unsigned char* Platform::MACAddress() const
 	return nvData.macAddress;
 }
 
-inline float Platform::GetElasticComp(size_t drive) const
+inline float Platform::GetElasticComp(size_t extruder) const
 {
-	return (drive < DRIVES) ? elasticComp[drive] : 0.0;
+	return (extruder < DRIVES - AXES) ? elasticComp[extruder] : 0.0;
 }
 
 inline void Platform::SetEndStopConfiguration(size_t axis, EndStopType esType, bool logicLevel)
@@ -1407,21 +1418,6 @@ inline float Platform::GetNozzleDiameter() const
 inline void Platform::SetNozzleDiameter(float diameter)
 {
 	nozzleDiameter = diameter;
-}
-
-// Two functions to set and get any processor pin.
-// Only for use by the M579 command with extreme caution.  Don't use these
-// for anything else.
-
-inline void Platform::SetOutputPin(int pin, bool value)
-{
-	pinMode(pin, OUTPUT);
-	digitalWrite(pin, value);	
-}
-
-inline bool Platform::GetInputPin(int pin)
-{
-	return digitalRead(pin);
 }
 
 //***************************************************************************************

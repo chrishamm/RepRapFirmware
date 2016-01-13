@@ -482,7 +482,7 @@ bool PrintMonitor::GetFileInfo(const char *directory, const char *fileName, GCod
 			}
 
 			// Go to the last sector and proceed from there on
-			const FilePosition seekFromEnd = fileBeingParsed->Length() % GCODE_READ_SIZE;
+			const FilePosition seekFromEnd = (fileBeingParsed->Length() - 1) % GCODE_READ_SIZE + 1;
 			fileBeingParsed->Seek(fileBeingParsed->Length() - seekFromEnd);
 			fileOverlapLength = 0;
 			parseState = parsingFooter;
@@ -600,7 +600,7 @@ bool PrintMonitor::GetFileInfoResponse(const char *filename, OutputBuffer *&resp
 
 		if (info.isValid)
 		{
-			if (!reprap.AllocateOutput(response))
+			if (!OutputBuffer::Allocate(response))
 			{
 				// Should never happen
 				return false;
@@ -625,7 +625,7 @@ bool PrintMonitor::GetFileInfoResponse(const char *filename, OutputBuffer *&resp
 		}
 		else
 		{
-			if (!reprap.AllocateOutput(response))
+			if (!OutputBuffer::Allocate(response))
 			{
 				// Should never happen
 				return false;
@@ -636,7 +636,7 @@ bool PrintMonitor::GetFileInfoResponse(const char *filename, OutputBuffer *&resp
 	}
 	else if (IsPrinting())
 	{
-		if (!reprap.AllocateOutput(response))
+		if (!OutputBuffer::Allocate(response))
 		{
 			// Should never happen
 			return false;
@@ -670,7 +670,7 @@ bool PrintMonitor::GetFileInfoResponse(const char *filename, OutputBuffer *&resp
 	}
 	else
 	{
-		if (!reprap.AllocateOutput(response))
+		if (!OutputBuffer::Allocate(response))
 		{
 			// Should never happen
 			return false;
@@ -728,10 +728,10 @@ float PrintMonitor::EstimateTimeLeft(PrintEstimationMethod method) const
 		case fileBased:
 		{
 			// Provide rough estimation only if we haven't collected any layer samples
-			float fractionPrinted = gCodes->FractionOfFilePrinted();
+			const float fractionPrinted = gCodes->FractionOfFilePrinted();
 			if (numLayerSamples == 0 || !printingFileParsed || printingFileInfo.objectHeight == 0.0)
 			{
-				return realPrintDuration * (1.0 / fractionPrinted) - realPrintDuration;
+				return (fractionPrinted < 0.01) ? 0.0 : (realPrintDuration * (1.0 / fractionPrinted) - realPrintDuration);
 			}
 
 			// Each layer takes time to achieve more file progress, so take an average over our samples

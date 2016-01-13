@@ -52,17 +52,17 @@ class Move
 		void SetFeedrate(float feedRate);												// Sometimes we want to override the feed rate
 		void SetLiveCoordinates(const float coords[DRIVES]);							// Force the live coordinates (see above) to be these
 		void ResetRawExtruderTotals();													// Reset the raw extruder distances, e.g. because a new file print has started
-		void SetXBedProbePoint(int index, float x);										// Record the X coordinate of a probe point
-		void SetYBedProbePoint(int index, float y);										// Record the Y coordinate of a probe point
-		void SetZBedProbePoint(int index, float z, bool wasXyCorrected, bool wasError);	// Record the Z coordinate of a probe point
-		float XBedProbePoint(int index) const;											// Get the X coordinate of a probe point
-		float YBedProbePoint(int index) const;											// Get the Y coordinate of a probe point
-		float ZBedProbePoint(int index)const ;											// Get the Z coordinate of a probe point
-		int NumberOfProbePoints() const;												// How many points to probe have been set?  0 if incomplete
-		int NumberOfXYProbePoints() const;												// How many XY coordinates of probe points have been set (Zs may not have been probed yet)
-		bool AllProbeCoordinatesSet(int index) const;									// XY, and Z all set for this one?
-		bool XYProbeCoordinatesSet(int index) const;									// Just XY set for this one?
-		void FinishedBedProbing(int sParam, StringRef& reply);							// Calibrate or set the bed equiation after probing
+		void SetXBedProbePoint(size_t index, float x);										// Record the X coordinate of a probe point
+		void SetYBedProbePoint(size_t index, float y);										// Record the Y coordinate of a probe point
+		void SetZBedProbePoint(size_t index, float z, bool wasXyCorrected, bool wasError);	// Record the Z coordinate of a probe point
+		float XBedProbePoint(size_t index) const;											// Get the X coordinate of a probe point
+		float YBedProbePoint(size_t index) const;											// Get the Y coordinate of a probe point
+		float ZBedProbePoint(size_t index) const;											// Get the Z coordinate of a probe point
+		size_t NumberOfProbePoints() const;												// How many points to probe have been set?  0 if incomplete
+		size_t NumberOfXYProbePoints() const;											// How many XY coordinates of probe points have been set (Zs may not have been probed yet)
+		bool AllProbeCoordinatesSet(size_t index) const;								// XY, and Z all set for this one?
+		bool XYProbeCoordinatesSet(size_t index) const;									// Just XY set for this one?
+		void FinishedBedProbing(int sParam, StringRef& reply);							// Calibrate or set the bed equation after probing
 		float SecondDegreeTransformZ(float x, float y) const;							// Used for second degree bed equation
 		void SetAxisCompensation(int8_t axis, float tangent);							// Set an axis-pair compensation angle
 		float AxisCompensation(int8_t axis) const;										// The tangent value

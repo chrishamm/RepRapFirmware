@@ -106,7 +106,6 @@ static void emac_read_packet(uint32_t ul_status)
 {
 	// Because the LWIP stack can become corrupted if we work with it in parallel,
 	// we may have to wait for the next Spin() call to read the next packet.
-
 	if (ethernet_is_ready() && LockLWIP())
 	{
 		do {
@@ -721,13 +720,13 @@ void Network::WaitForDataConection()
 	r->inputPointer = 0; // behave as if this request hasn't been processed yet
 }
 
-uint8_t *Network::IPAddress() const
+const uint8_t *Network::IPAddress() const
 {
-	return reinterpret_cast<uint8_t*>(&ethernet_get_configuration()->ip_addr.addr);
+	return reinterpret_cast<const uint8_t*>(&ethernet_get_configuration()->ip_addr.addr);
 }
 
-void Network::SetIPAddress(const unsigned char ipAddress[], const unsigned char netmask[],
-		const unsigned char gateway[])
+void Network::SetIPAddress(const uint8_t ipAddress[], const uint8_t netmask[],
+		const uint8_t gateway[])
 {
 	if (state == NetworkActive)
 	{
@@ -926,6 +925,11 @@ uint16_t ConnectionState::GetRemotePort() const
 
 // NetworkTransaction class members
 
+NetworkTransaction::NetworkTransaction(NetworkTransaction *n) : next(n)
+{
+	sendStack = new OutputStack();
+}
+
 void NetworkTransaction::Set(pbuf *p, ConnectionState *c, TransactionStatus s)
 {
 	cs = c;
@@ -942,7 +946,7 @@ void NetworkTransaction::Set(pbuf *p, ConnectionState *c, TransactionStatus s)
 }
 
 // How many incoming bytes do we have to process?
-uint16_t NetworkTransaction::DataLength() const
+size_t NetworkTransaction::DataLength() const
 {
 	return (pb == nullptr) ? 0 : pb->tot_len;
 }
@@ -1014,9 +1018,9 @@ bool NetworkTransaction::ReadBuffer(char *&buffer, unsigned int &len)
 
 void NetworkTransaction::Write(char b)
 {
-	if (!LostConnection() && status != disconnected)
+	if (CanWrite())
 	{
-		if (sendBuffer == nullptr && !reprap.AllocateOutput(sendBuffer))
+		if (sendBuffer == nullptr && !OutputBuffer::Allocate(sendBuffer))
 		{
 			return;
 		}
@@ -1028,9 +1032,9 @@ void NetworkTransaction::Write(char b)
 // It may be necessary to split it up into multiple SendBuffers.
 void NetworkTransaction::Write(const char* s)
 {
-	if (!LostConnection() && status != disconnected)
+	if (CanWrite())
 	{
-		if (sendBuffer == nullptr && !reprap.AllocateOutput(sendBuffer))
+		if (sendBuffer == nullptr && !OutputBuffer::Allocate(sendBuffer))
 		{
 			return;
 		}
@@ -1045,9 +1049,9 @@ void NetworkTransaction::Write(StringRef ref)
 
 void NetworkTransaction::Write(const char* s, size_t len)
 {
-	if (!LostConnection() && status != disconnected)
+	if (CanWrite())
 	{
-		if (sendBuffer == nullptr && !reprap.AllocateOutput(sendBuffer))
+		if (sendBuffer == nullptr && !OutputBuffer::Allocate(sendBuffer))
 		{
 			return;
 		}
@@ -1057,22 +1061,29 @@ void NetworkTransaction::Write(const char* s, size_t len)
 
 void NetworkTransaction::Write(OutputBuffer *buffer)
 {
-	if (!LostConnection() && status != disconnected)
+	if (CanWrite())
 	{
-		if (sendBuffer == nullptr)
-		{
-			sendBuffer = buffer;
-		}
-		else
-		{
-			sendBuffer->Append(buffer);
-		}
+		// Note we use an individual stack here, because we don't want to link different
+		// OutputBuffers for different destinations together...
+		sendStack->Push(buffer);
 	}
 	else
 	{
-		while (buffer != nullptr)
+		OutputBuffer::ReleaseAll(buffer);
+	}
+}
+
+void NetworkTransaction::Write(OutputStack *stack)
+{
+	if (stack != nullptr)
+	{
+		if (CanWrite())
 		{
-			buffer = reprap.ReleaseOutput(buffer);
+			sendStack->Append(stack);
+		}
+		else
+		{
+			stack->ReleaseAll();
 		}
 	}
 }
@@ -1080,32 +1091,31 @@ void NetworkTransaction::Write(OutputBuffer *buffer)
 // Write formatted data to the output buffer
 void NetworkTransaction::Printf(const char* fmt, ...)
 {
-	if (LostConnection() || status == disconnected)
+	if (CanWrite() && (sendBuffer != nullptr || OutputBuffer::Allocate(sendBuffer)))
 	{
-		return;
+		va_list p;
+		va_start(p, fmt);
+		sendBuffer->vprintf(fmt, p);
+		va_end(p);
 	}
-
-	if (sendBuffer == nullptr && !reprap.AllocateOutput(sendBuffer))
-	{
-		return;
-	}
-
-	va_list p;
-	va_start(p, fmt);
-	sendBuffer->vprintf(fmt, p);
-	va_end(p);
 }
 
 void NetworkTransaction::SetFileToWrite(FileStore *file)
 {
-	fileBeingSent = file;
+	if (CanWrite())
+	{
+		fileBeingSent = file;
+	}
+	else if (file != nullptr)
+	{
+		file->Close();
+	}
 }
 
 // Send exactly one TCP window of data or return true if we can free up this object
 bool NetworkTransaction::Send()
 {
 	// Free up this transaction if we either lost our connection or are supposed to close it now
-
 	if (LostConnection() || closeRequested)
 	{
 		if (fileBeingSent != nullptr)
@@ -1114,11 +1124,8 @@ bool NetworkTransaction::Send()
 			fileBeingSent = nullptr;
 		}
 
-		Network *net = reprap.GetNetwork();
-		while (sendBuffer != nullptr)
-		{
-			sendBuffer = reprap.ReleaseOutput(sendBuffer);
-		}
+		OutputBuffer::ReleaseAll(sendBuffer);
+		sendStack->ReleaseAll();
 
 		if (!LostConnection())
 		{
@@ -1145,7 +1152,7 @@ bool NetworkTransaction::Send()
 	}
 
 	// We're still waiting for data to be ACK'ed, so check timeouts here
-	if (sentDataOutstanding)
+	if (sentDataOutstanding != 0)
 	{
 		if (!isnan(lastWriteTime))
 		{
@@ -1175,7 +1182,11 @@ bool NetworkTransaction::Send()
 
 		if (sendBuffer->BytesLeft() == 0)
 		{
-			sendBuffer = reprap.ReleaseOutput(sendBuffer);
+			sendBuffer = OutputBuffer::Release(sendBuffer);
+			if (sendBuffer == nullptr)
+			{
+				sendBuffer = sendStack->Pop();
+			}
 		}
 	}
 
@@ -1232,7 +1243,6 @@ bool NetworkTransaction::Send()
 			sendingWindowSize = sentDataOutstanding = bytesBeingSent;
 
 			lastWriteTime = reprap.GetPlatform()->Time();
-
 			tcp_output(cs->pcb);
 		}
 	}
@@ -1258,9 +1268,13 @@ void NetworkTransaction::Commit(bool keepConnectionAlive)
 		else
 		{
 			// We're actually sending, so this transaction must be complete
-			reprap.GetNetwork()->readyTransactions = next;
 			FreePbuf();
+			reprap.GetNetwork()->readyTransactions = next;
 			cs->persistConnection = keepConnectionAlive;
+			if (sendBuffer == nullptr)
+			{
+				sendBuffer = sendStack->Pop();
+			}
 			status = dataSending;
 
 			// Enqueue this transaction, so it's sent in the right order
@@ -1313,10 +1327,8 @@ void NetworkTransaction::Discard()
 		fileBeingSent->Close();
 	}
 
-	while (sendBuffer != nullptr)
-	{
-		sendBuffer = reprap.ReleaseOutput(sendBuffer);
-	}
+	OutputBuffer::ReleaseAll(sendBuffer);
+	sendStack->ReleaseAll();
 
 	// Free this transaction again unless it's still referenced
 	if (status != dataSending)
