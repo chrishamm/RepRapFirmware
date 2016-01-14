@@ -6,11 +6,11 @@
 #
 
 # Referenced component versions
-$ARDUINO_VERSION = "1.6.5"
+$ARDUINO_VERSION = "1.6.7"
 $GCC_VERSION = "4.8.3-2014q1"
 $BOSSAC_VERSION = "1.3a-arduino"
 
-$DUET_BOARD_VERSION = "1.0.6"
+$DUET_BOARD_VERSION = "1.0.7"
 
 # Workspace paths
 $LIBRARY_PATH = "$(Get-Location)\Libraries"

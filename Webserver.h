@@ -195,6 +195,7 @@ class Webserver
 				};
 
 				void SendFile(const char* nameOfFileToSend);
+				void SendConfigFile(NetworkTransaction *transaction);
 				void SendGCodeReply(NetworkTransaction *transaction);
 				void SendJsonResponse(const char* command);
 				bool GetJsonResponse(const char* request, OutputBuffer *&response, const char* key, const char* value, size_t valueLength, bool& keepOpen);

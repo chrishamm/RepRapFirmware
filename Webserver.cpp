@@ -54,6 +54,9 @@
 
  rr_reply    Returns the last-known G-code reply as plain text (not encapsulated as JSON).
 
+ rr_configfile
+			 Sends the config file as plain text (not encapsulated as JSON either).
+
  rr_upload?name=xxx
  	 	 	 Upload a specified file using a POST request. The payload of this request has to be
  	 	 	 the file content. Only one file may be uploaded at once. When the upload has finished,
@@ -700,6 +703,18 @@ void Webserver::HttpInterpreter::SendFile(const char* nameOfFileToSend)
 	transaction->Commit(false);
 }
 
+void Webserver::HttpInterpreter::SendConfigFile(NetworkTransaction *transaction)
+{
+	FileStore *configFile = platform->GetFileStore(platform->GetSysDir(), platform->GetConfigFile(), false);
+
+	transaction->Write("HTTP/1.1 200 OK\n");
+	transaction->Write("Content-Type: text/plain\n");
+	transaction->Printf("Content-Length: %u\n", (configFile != nullptr) ? configFile->Length() : 0);
+	transaction->Write("Connection: close\n\n");
+	transaction->SetFileToWrite(configFile);
+	transaction->Commit(false);
+}
+
 void Webserver::HttpInterpreter::SendGCodeReply(NetworkTransaction *transaction)
 {
 	// Do we need to keep the G-Code reply for other clients?
@@ -754,6 +769,13 @@ void Webserver::HttpInterpreter::SendJsonResponse(const char* command)
 	if (IsAuthenticated() && StringEquals(command, "reply"))
 	{
 		SendGCodeReply(transaction);
+		return;
+	}
+
+	// rr_configfile sends the config as plain text well
+	if (IsAuthenticated() && StringEquals(command, "configfile"))
+	{
+		SendConfigFile(transaction);
 		return;
 	}
 
@@ -1003,7 +1025,7 @@ bool Webserver::HttpInterpreter::GetJsonResponse(const char* request, OutputBuff
 			{
 				if (StringEquals(key, "old") && StringEquals(qualifiers[1].key, "new"))
 				{
-					response->printf("{\"err\":%d}", platform->GetMassStorage()->Rename(value, qualifiers[1].value) ? 1 : 0);
+					response->printf("{\"err\":%d}", platform->GetMassStorage()->Rename(value, qualifiers[1].value) ? 0 : 1);
 				}
 				else
 				{

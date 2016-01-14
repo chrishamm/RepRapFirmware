@@ -191,9 +191,9 @@ const uint8_t MAC_ADDRESS[6] = { 0xBE, 0xEF, 0xDE, 0xAD, 0xFE, 0xED };
 
 // Communication port settings
 
-const unsigned int MAIN_BAUD_RATE = 115200;		// Default communication speed of the main port (USB) if needed
-const unsigned int AUX_BAUD_RATE = 57600;		// Ditto - for auxiliary UART device
-const unsigned int AUX2_BAUD_RATE = 115200;		// Ditto - for second auxiliary UART device
+const unsigned int MAIN_BAUD_RATE = 115200;		// Default communication speed of the main port (USB)
+const unsigned int AUX_BAUD_RATE = 57600;		// Ditto - for auxiliary UART device (PanelDue)
+const unsigned int AUX2_BAUD_RATE = 9600;		// Ditto - for second auxiliary UART device (Roland mill)
 
 /***************************************************************************************************/
 

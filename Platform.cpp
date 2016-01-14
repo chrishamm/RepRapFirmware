@@ -2796,7 +2796,7 @@ void Platform::Tick()
 			}
 
 			++currentHeater;
-			if (currentHeater == HEATERS)
+			if (currentHeater >= reprap.GetHeatersInUse())
 			{
 				currentHeater = 0;
 			}
