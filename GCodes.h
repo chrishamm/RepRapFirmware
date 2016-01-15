@@ -118,6 +118,15 @@ class CodeQueueItem
 
 // The GCode interpreter
 
+enum class PrintStatus
+{
+	NotPaused,
+	WaitingForMacro,
+	Pausing,
+	Paused,
+	Resuming
+};
+
 class GCodes
 {
 	public:
@@ -243,7 +252,7 @@ class GCodes
 		FileStore* fileBeingWritten;								// A file to write G Codes (or sometimes HTML) in
 		bool doingFileMacro, returningFromMacro;					// Are we executing a macro file or are we returning from it?
 		const GCodeBuffer *macroSourceGCode;						// Which GCodeBuffer is running the macro(s)?
-		bool isPausing, isPaused, isResuming;						// What is the state of the current file print?
+		PrintStatus printStatus;									// What is the state of the current file print?
 		bool doPauseMacro;											// Do we need to run pause.g and resume.g?
 		float fractionOfFilePrinted;								// Only used to record the main file when a macro is being printed
 		uint8_t eofStringCounter;									// Check the EoF string as we read.

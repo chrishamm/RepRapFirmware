@@ -131,6 +131,6 @@ clean:
 upload: $(OUTPUT_DIR)/RepRapFirmware.bin
 	@echo "=> Rebooting hardware into bootloader mode..."
 	@stty -F $(DUET_PORT) 1200 -ixon -crtscts || true
-	@sleep 2
+	@sleep 1
 	@echo "=> Flashing new firmware binary..."
 	@$(BOSSAC_PATH) -u -e -w -b $(OUTPUT_DIR)/RepRapFirmware.bin -R

@@ -488,7 +488,9 @@ typedef AveragingFilter<Z_PROBE_AVERAGE_READINGS> ZProbeAveragingFilter;
 enum class ErrorCode : uint32_t
 {
 	BadTemp = 1 << 0,
-	BadMove = 1 << 1
+	BadMove = 1 << 1,
+	OutputStarvation = 1 << 2,
+	OutputStackOverflow = 1 << 3
 };
 
 // Different types of hardware-related input-output
@@ -1016,28 +1018,33 @@ class FileData
 
 		bool Read(char& b)
 		{
+			if (f == nullptr)
+			{
+				b = 0;
+				return false;
+			}
 			return f->Read(b);
 		}
 
 		bool Write(char b)
 		{
-			return f->Write(b);
+			return (f == nullptr ? false : f->Write(b));
 		}
 
 		bool Write(const char *s, unsigned int len)
 		//pre(len <= FILE_BUFFER_SIZE)
 		{
-			return f->Write(s, len);
+			return (f == nullptr ? false : f->Write(s, len));
 		}
 
 		bool Flush()
 		{
-			return f->Flush();
+			return (f == nullptr ? false : f->Flush());
 		}
 
 		bool Seek(FilePosition position)
 		{
-			return f->Seek(position);
+			return (f == nullptr ? false : f->Seek(position));
 		}
 
 		float FractionRead() const
@@ -1052,7 +1059,7 @@ class FileData
 
 		FilePosition Length() const
 		{
-			return f->Length();
+			return (f == nullptr ? 0 : f->Length());
 		}
 
 		// Assignment operator

@@ -39,13 +39,13 @@ const uint16_t gcodeBufferLength = 512;			// size of our gcode ring buffer, pref
 
 const uint16_t webUploadBufferSize = 2300;		// maximum size of HTTP GET upload packets (webMessageLength - 700)
 const uint16_t webMessageLength = 3000;			// maximum length of the web message we accept after decoding
-const size_t minHttpResponseSize = 1024;		// minimum number of bytes required for an HTTP response
+const size_t minHttpResponseSize = 768;			// minimum number of bytes required for an HTTP response
 
 const size_t maxCommandWords = 4;				// max number of space-separated words in the command
 const size_t maxQualKeys = 5;					// max number of key/value pairs in the qualifier
 const size_t maxHeaders = 16;					// max number of key/value pairs in the headers
 
-const size_t  maxSessions = 8;					// maximum number of simultaneous HTTP sessions
+const size_t  maxHttpSessions = 8;				// maximum number of simultaneous HTTP sessions
 const float httpSessionTimeout = 8.0;			// HTTP session timeout in seconds
 
 /* FTP */
@@ -143,6 +143,7 @@ class Webserver
 			public:
 
 				HttpInterpreter(Platform *p, Webserver *ws, Network *n);
+				void Diagnostics();
 				void ConnectionLost(uint32_t remoteIP, uint16_t remotePort, uint16_t localPort);
 				bool CharFromClient(const char c);
 				void ResetState();
@@ -226,7 +227,7 @@ class Webserver
 					uint16_t postPort;
 				};
 
-				HttpSession sessions[maxSessions];
+				HttpSession sessions[maxHttpSessions];
 				size_t numSessions, clientsServed;
 
 				bool Authenticate();
@@ -268,6 +269,7 @@ class Webserver
 			public:
 
 				FtpInterpreter(Platform *p, Webserver *ws, Network *n);
+				void Diagnostics();
 				void ConnectionEstablished();
 				void ConnectionLost(uint32_t remoteIP, uint16_t remotePort, uint16_t localPort);
 				bool CharFromClient(const char c);
@@ -312,6 +314,7 @@ class Webserver
 			public:
 
 				TelnetInterpreter(Platform *p, Webserver *ws, Network *n);
+				void Diagnostics();
 				void ConnectionEstablished();
 				void ConnectionLost(uint32_t remoteIP, uint16_t remotePort, uint16_t local_port);
 				bool CharFromClient(const char c);

@@ -264,6 +264,9 @@ void Webserver::Exit()
 void Webserver::Diagnostics()
 {
 	platform->Message(GENERIC_MESSAGE, "Webserver Diagnostics:\n");
+	httpInterpreter->Diagnostics();
+	ftpInterpreter->Diagnostics();
+	telnetInterpreter->Diagnostics();
 }
 
 bool Webserver::GCodeAvailable(const WebSource source) const
@@ -506,6 +509,11 @@ Webserver::HttpInterpreter::HttpInterpreter(Platform *p, Webserver *ws, Network 
 	uploadingTextData = false;
 	processingDeferredRequest = false;
 	numContinuationBytes = seq = 0;
+}
+
+void Webserver::HttpInterpreter::Diagnostics()
+{
+	platform->MessageF(GENERIC_MESSAGE, "HTTP sessions: %d of %d\n", numSessions, maxHttpSessions);
 }
 
 // File Uploads
@@ -804,7 +812,7 @@ void Webserver::HttpInterpreter::SendJsonResponse(const char* command)
 	// Check the special case of a deferred request
 	if (processingDeferredRequest)
 	{
-		OutputBuffer::ReleaseAll(jsonResponse);
+		// GetJsonResponse() must free the allocated OutputBuffer before we get here
 		return;
 	}
 
@@ -936,12 +944,14 @@ bool Webserver::HttpInterpreter::GetJsonResponse(const char* request, OutputBuff
 					type = 1;
 				}
 
-				OutputBuffer::Replace(response, reprap.GetStatusResponse(type, ResponseSource::HTTP));
+				OutputBuffer::Release(response);
+				response = reprap.GetStatusResponse(type, ResponseSource::HTTP);
 			}
 			else
 			{
 				// Deprecated
-				OutputBuffer::Replace(response, reprap.GetLegacyStatusResponse(1, 0));
+				OutputBuffer::Release(response);
+				response = reprap.GetLegacyStatusResponse(1, 0);
 			}
 		}
 		else if (StringEquals(request, "gcode") && StringEquals(key, "gcode"))
@@ -1003,14 +1013,14 @@ bool Webserver::HttpInterpreter::GetJsonResponse(const char* request, OutputBuff
 					flagDirs = StringEquals(qualifiers[1].value, "1");
 				}
 			}
-			OutputBuffer::Replace(response, reprap.GetFilesResponse(dir, flagDirs));
+			OutputBuffer::Release(response);
+			response = reprap.GetFilesResponse(dir, flagDirs);
 		}
 		else if (StringEquals(request, "fileinfo"))
 		{
-			OutputBuffer *buffer;
-			if (reprap.GetPrintMonitor()->GetFileInfoResponse(StringEquals(key, "name") ? value : nullptr, buffer))
+			OutputBuffer::Release(response);
+			if (reprap.GetPrintMonitor()->GetFileInfoResponse(StringEquals(key, "name") ? value : nullptr, response))
 			{
-				OutputBuffer::Replace(response, buffer);
 				processingDeferredRequest = false;
 			}
 			else
@@ -1044,7 +1054,8 @@ bool Webserver::HttpInterpreter::GetJsonResponse(const char* request, OutputBuff
 		}
 		else if (StringEquals(request, "config"))
 		{
-			OutputBuffer::Replace(response, reprap.GetConfigResponse());
+			OutputBuffer::Release(response);
+			response = reprap.GetConfigResponse();
 		}
 		else
 		{
@@ -1613,7 +1624,7 @@ bool Webserver::HttpInterpreter::RejectMessage(const char* response, unsigned in
 // Authenticate current IP and return true on success
 bool Webserver::HttpInterpreter::Authenticate()
 {
-	if (numSessions < maxSessions)
+	if (numSessions < maxHttpSessions)
 	{
 		sessions[numSessions].ip = network->GetTransaction()->GetRemoteIP();
 		sessions[numSessions].lastQueryTime = platform->Time();
@@ -1829,7 +1840,7 @@ void Webserver::HttpInterpreter::HandleGCodeReply(const char *reply)
 	if (numSessions > 0)
 	{
 		OutputBuffer *buffer = gcodeReply->GetLastItem();
-		if (buffer == nullptr || buffer->References() > 1)
+		if (buffer == nullptr || buffer->IsReferenced())
 		{
 			if (!OutputBuffer::Allocate(buffer))
 			{
@@ -1856,6 +1867,11 @@ Webserver::FtpInterpreter::FtpInterpreter(Platform *p, Webserver *ws, Network *n
 {
 	connectedClients = 0;
 	strcpy(currentDir, "/");
+}
+
+void Webserver::FtpInterpreter::Diagnostics()
+{
+	platform->MessageF(GENERIC_MESSAGE, "FTP connections: %d, state %d\n", connectedClients, state);
 }
 
 void Webserver::FtpInterpreter::ConnectionEstablished()
@@ -2508,6 +2524,11 @@ Webserver::TelnetInterpreter::TelnetInterpreter(Platform *p, Webserver *ws, Netw
 	gcodeReadIndex = gcodeWriteIndex = 0;
 	gcodeReply = nullptr;
 	ResetState();
+}
+
+void Webserver::TelnetInterpreter::Diagnostics()
+{
+	platform->MessageF(GENERIC_MESSAGE, "Telnet connections: %d\n", connectedClients);
 }
 
 void Webserver::TelnetInterpreter::ConnectionEstablished()

@@ -1734,7 +1734,7 @@ void Platform::Message(MessageType type, const char *message)
 			{
 				// Ensure we have a valid buffer to write to that isn't referenced for other destinations
 				OutputBuffer *usbOutputBuffer = usbOutput->GetLastItem();
-				if (usbOutputBuffer == nullptr || usbOutputBuffer->References() > 1)
+				if (usbOutputBuffer == nullptr || usbOutputBuffer->IsReferenced())
 				{
 					if (!OutputBuffer::Allocate(usbOutputBuffer))
 					{

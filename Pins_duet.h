@@ -93,8 +93,8 @@ const Pin INKJET_OUTPUT_ENABLE = 66;									// Make the output visible
 const Pin INKJET_CLEAR = 36;											// Clear the register to 0
 
 // Roland mill
-const int8_t ROLAND_RTS_PIN = 10;										// Expansion pin 27, SPI0_NPCS0
-const int8_t ROLAND_CTS_PIN = 4;										// Expansion pin 26, SPI0_NPCS1
+const int8_t ROLAND_RTS_PIN = 77;										// Expansion pin 27, SPI0_NPCS0
+const int8_t ROLAND_CTS_PIN = 87;										// Expansion pin 26, SPI0_NPCS1
 
 // Definition of which pins we allow to be controlled using M42
 //

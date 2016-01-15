@@ -106,7 +106,7 @@ void GCodes::Reset()
 	endStopsToCheck = 0;
 	doingFileMacro = returningFromMacro = false;
 	macroSourceGCode = nullptr;
-	isPausing = isPaused = isResuming = false;
+	printStatus = PrintStatus::NotPaused;
 	for(size_t drive = 0; drive < DRIVES; drive++)
 	{
 		pauseCoordinates[drive] = 0.0;
@@ -857,6 +857,7 @@ bool GCodes::FileMacroCyclesReturn()
 		return false;
 
 	fileBeingPrinted.Close();
+	doingFileMacro = false;
 	returningFromMacro = true;
 	//fileMacroGCode->Init();
 	//macroSourceGCode = nullptr;
@@ -2771,6 +2772,7 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			}
 
 			// Call stop.g or sleep.g to allow users to execute custom actions before everything stops
+			// This will also guarantee that movement has stopped and that no other macro is running
 			if (!DoFileMacro(gb, (code == 0) ? STOP_G : SLEEP_G))
 				return false;
 
@@ -2986,6 +2988,26 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			{
 				return false;
 			}
+			if (DoingFileMacro())
+			{
+				if (gb == macroSourceGCode)
+				{
+					error = true;
+					reply.copy("Prints cannot be resumed using macro files");
+					break;
+				}
+				else if (gb == fileGCode)
+				{
+					error = true;
+					reply.copy("M24 is not allowed in G-code files");
+					break;
+				}
+				else
+				{
+					// Wait for the running macro to finish first
+					return false;
+				}
+			}
 
 			// See if we're printing a file
 			if (!fileToPrint.IsLive())
@@ -2998,7 +3020,7 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			// We're resuming a paused print, so we may need to run the resume macro first.
 			if (IsPaused())
 			{
-				isResuming = true;
+				printStatus = PrintStatus::Resuming;
 				if (doPauseMacro && !DoFileMacro(gb, RESUME_G))
 				{
 					result = false;
@@ -3067,7 +3089,7 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 				}
 				reprap.GetPrintMonitor()->StartedPrint();
 			}
-			isResuming = isPaused = false;
+			printStatus = PrintStatus::NotPaused;
 
 			// Resume printing
 			for (size_t i = 0; i < NUM_FANS; ++i)
@@ -3085,7 +3107,20 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			// no break
 
 		case 25: // Pause the print
-			if (!IsPausing())
+			if (doingFileMacro && macroSourceGCode != gb)
+			{
+				if (gb == fileMacroGCode)
+				{
+					error = true;
+					reply.copy("Pausing prints using macro files is not supported\n");
+					break;
+				}
+
+				printStatus = PrintStatus::WaitingForMacro;
+				return false;
+			}
+
+			if (printStatus != PrintStatus::Pausing)
 			{
 				if (!reprap.GetPrintMonitor()->IsPrinting())
 				{
@@ -3094,8 +3129,8 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 				}
 				else
 				{
+					printStatus = PrintStatus::Pausing;
 					result = false;
-					isPausing = true;
 					doPauseMacro = (code == 226) || (!reprap.GetMove()->NoLiveMovement());
 
 					if (code == 25)
@@ -3171,12 +3206,6 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 					}
 					fractionOfFilePrinted = fileBeingPrinted.FractionRead();
 					fileToPrint.MoveFrom(fileBeingPrinted);
-
-					if (gb != fileGCode)
-					{
-						// Only clear the last running G-Code if it isn't the origin of this M25 or M226 call
-						fileGCode->Clear();
-					}
 				}
 			}
 			// We're pausing, so wait for all pending moves to finish first.
@@ -3186,8 +3215,7 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 				result = (!doPauseMacro || DoFileMacro(gb, PAUSE_G));
 				if (result)
 				{
-					isPausing = false;
-					isPaused = true;
+					printStatus = PrintStatus::Paused;
 				}
 			}
 			else
@@ -5520,7 +5548,7 @@ bool GCodes::ChangeTool(GCodeBuffer *gb, int newToolNumber)
 	return true;
 }
 
-// Cancel the current SD card print
+// Cancel the current SD card print. There must be no live movement when this is called
 void GCodes::CancelPrint()
 {
 	while (internalCodeQueue != nullptr)
@@ -5530,19 +5558,14 @@ void GCodes::CancelPrint()
 		item->SetNext(releasedQueueItems);
 		releasedQueueItems = item;
 	}
+	queuedGCode->Clear();
 
 	totalMoves = movesCompleted = 0;
 	ClearMove();
-	isPausing = isPaused = isResuming = false;
+
+	printStatus = PrintStatus::NotPaused;
 	fractionOfFilePrinted = -1.0;
-
-	fileGCode->Clear();
-	queuedGCode->Clear();
-
-	if (fileBeingPrinted.IsLive())
-	{
-		fileBeingPrinted.Close();
-	}
+	fileBeingPrinted.Close();
 
 	if (reprap.GetPrintMonitor()->IsPrinting())
 	{
@@ -5586,17 +5609,17 @@ bool GCodes::HaveAux() const
 
 bool GCodes::IsPausing() const
 {
-	return isPausing;
+	return (printStatus == PrintStatus::WaitingForMacro || printStatus == PrintStatus::Pausing);
 }
 
 bool GCodes::IsPaused() const
 {
-	return isPaused;
+	return (printStatus == PrintStatus::Paused);
 }
 
 bool GCodes::IsResuming() const
 {
-	return isResuming;
+	return (printStatus == PrintStatus::Resuming);
 }
 
 bool GCodes::IsRunning() const

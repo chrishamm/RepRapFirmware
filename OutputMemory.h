@@ -12,7 +12,7 @@
 #include "Configuration.h"
 #include "StringRef.h"
 
-const size_t OUTPUT_STACK_DEPTH = 8;	// Number of OutputBuffers that can be pushed onto one stack instance
+const size_t OUTPUT_STACK_DEPTH = 4;	// Number of OutputBuffer chains that can be pushed onto one stack instance
 
 class OutputStack;
 
@@ -26,7 +26,7 @@ class OutputBuffer
 
 		void Append(OutputBuffer *other);
 		OutputBuffer *Next() const { return next; }
-		size_t References() const { return references; }
+		bool IsReferenced() const { return isReferenced; }
 		void IncreaseReferences(size_t refs);
 
 		const char *Data() const { return data; }
@@ -65,9 +65,6 @@ class OutputBuffer
 		// continuous writes, i.e. for writes that need to allocate an extra OutputBuffer instance to finish the message.
 		static size_t GetBytesLeft(const OutputBuffer *writingBuffer);
 
-		// Replace an existing OutputBuffer with another one.
-		static void Replace(OutputBuffer *&destination, OutputBuffer *source);
-
 		// Truncate an OutputBuffer instance to free up more memory. Returns the number of released bytes.
 		static size_t Truncate(OutputBuffer *buffer, size_t bytesNeeded);
 
@@ -87,6 +84,7 @@ class OutputBuffer
 		char data[OUTPUT_BUFFER_SIZE];
 		size_t dataLength, bytesRead;
 
+		bool isReferenced;
 		size_t references;
 
 		static OutputBuffer * volatile freeOutputBuffers;		// Messages may also be sent by ISRs,

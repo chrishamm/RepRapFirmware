@@ -31,9 +31,13 @@ void OutputBuffer::Append(OutputBuffer *other)
 
 void OutputBuffer::IncreaseReferences(size_t refs)
 {
-	for(OutputBuffer *item = this; item != nullptr; item = item->Next())
+	if (refs > 0)
 	{
-		item->references += refs;
+		for(OutputBuffer *item = this; item != nullptr; item = item->Next())
+		{
+			item->references += refs;
+			item->isReferenced = true;
+		}
 	}
 }
 
@@ -358,6 +362,7 @@ size_t OutputBuffer::EncodeReply(OutputBuffer *src, bool allowControlChars)
 
 	if (freeOutputBuffers == nullptr)
 	{
+		reprap.GetPlatform()->RecordError(ErrorCode::OutputStarvation);
 		cpu_irq_restore(flags);
 
 		buf = nullptr;
@@ -389,6 +394,7 @@ size_t OutputBuffer::EncodeReply(OutputBuffer *src, bool allowControlChars)
 	buf->last = buf;
 	buf->dataLength = buf->bytesRead = 0;
 	buf->references = 1; // Assume it's only used once by default
+	buf->isReferenced = false;
 
 	cpu_irq_restore(flags);
 	return true;
@@ -397,14 +403,20 @@ size_t OutputBuffer::EncodeReply(OutputBuffer *src, bool allowControlChars)
 // Get the number of bytes left for continuous writing
 /*static*/ size_t OutputBuffer::GetBytesLeft(const OutputBuffer *writingBuffer)
 {
-	// If writingBuffer is NULL, just return how much space there is left for everything
+	// If writingBuffer is NULL, just return how much space there is left for continuous writing
 	if (writingBuffer == nullptr)
 	{
-		return (OUTPUT_BUFFER_COUNT - usedOutputBuffers) * OUTPUT_BUFFER_SIZE;
+		if (usedOutputBuffers == OUTPUT_BUFFER_COUNT)
+		{
+			// No more instances can be allocated
+			return 0;
+		}
+
+		return (OUTPUT_BUFFER_COUNT - usedOutputBuffers - 1) * OUTPUT_BUFFER_SIZE;
 	}
 
 	// Do we have any more buffers left for writing?
-	if (usedOutputBuffers >= OUTPUT_BUFFER_COUNT)
+	if (usedOutputBuffers == OUTPUT_BUFFER_COUNT)
 	{
 		// No - refer to this one only
 		return OUTPUT_BUFFER_SIZE - writingBuffer->last->DataLength();
@@ -450,16 +462,6 @@ size_t OutputBuffer::EncodeReply(OutputBuffer *src, bool allowControlChars)
 		item->last = previousItem;
 	}
 	return releasedBytes;
-}
-
-/*static*/ void OutputBuffer::Replace(OutputBuffer *&destination, OutputBuffer *source)
-{
-	OutputBuffer *temp = destination;
-	while (temp != nullptr)
-	{
-		temp = Release(temp);
-	}
-	destination = source;
 }
 
 // Releases an output buffer instance and returns the next entry from the chain
@@ -509,7 +511,7 @@ void OutputStack::Push(OutputBuffer *buffer)
 	if (count == OUTPUT_STACK_DEPTH)
 	{
 		OutputBuffer::ReleaseAll(buffer);
-		reprap.GetPlatform()->Message(HOST_MESSAGE, "Error: OutputStack overflow\n");
+		reprap.GetPlatform()->RecordError(ErrorCode::OutputStackOverflow);
 		return;
 	}
 
@@ -609,6 +611,7 @@ void OutputStack::Append(OutputStack *stack)
 		}
 		else
 		{
+			reprap.GetPlatform()->RecordError(ErrorCode::OutputStackOverflow);
 			OutputBuffer::ReleaseAll(stack->items[i]);
 		}
 	}
