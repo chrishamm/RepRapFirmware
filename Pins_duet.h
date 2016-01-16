@@ -86,7 +86,7 @@ const Pin COOLING_FAN_RPM_PIN = 23;										// Pin PA15
 
 // INKJET CONTROL PINS
 
-const Pin INKJET_SERIAL_OUT = 65;										// Serial bitpattern into the shift register
+const Pin INKJET_SERIAL_OUT = 21;										// Serial bitpattern into the shift register
 const Pin INKJET_SHIFT_CLOCK = 20;										// Shift the register
 const Pin INKJET_STORAGE_CLOCK = 67;									// Put the pattern in the output register
 const Pin INKJET_OUTPUT_ENABLE = 66;									// Make the output visible
