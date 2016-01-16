@@ -63,10 +63,10 @@ const float THERMISTOR_SERIES_RS = 1000.0;
 
 // Number of MAX31855 chips to support
 const size_t MAX31855_START_CHANNEL = 100;
-const size_t MAX31855_DEVICES = 4;
+const size_t MAX31855_DEVICES = 2;
 
 // Digital pins the 31855s have their select lines tied to
-const Pin MAX31855_CS_PINS[MAX31855_DEVICES] = { 16, 17, 18, 19 };
+const Pin MAX31855_CS_PINS[MAX31855_DEVICES] = { 77, 87 };
 
 // Arduino Due pin number that controls the ATX power on/off
 const Pin ATX_POWER_PIN = 12;											// Arduino Due pin number that controls the ATX power on/off
@@ -93,8 +93,8 @@ const Pin INKJET_OUTPUT_ENABLE = 66;									// Make the output visible
 const Pin INKJET_CLEAR = 36;											// Clear the register to 0
 
 // Roland mill
-const int8_t ROLAND_RTS_PIN = 77;										// Expansion pin 27, SPI0_NPCS0
-const int8_t ROLAND_CTS_PIN = 87;										// Expansion pin 26, SPI0_NPCS1
+const int8_t ROLAND_CTS_PIN = 16;										// Expansion pin 11, PA12_TXD1
+const int8_t ROLAND_RTS_PIN = 17;										// Expansion pin 12, PA13_RXD1
 
 // Definition of which pins we allow to be controlled using M42
 //
