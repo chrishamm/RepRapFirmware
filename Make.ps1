@@ -13,7 +13,7 @@ $BOSSAC_VERSION = "1.3a-arduino"
 $DUET_BOARD_VERSION = "1.0.8"
 
 # Workspace paths
-$LIBRARY_PATH = "$(Get-Location\Libraries"
+$LIBRARY_PATH = "$(Get-Location)\Libraries"
 $BUILD_PATH = "$(Get-Location)\Release\obj"
 $OUTPUT_DIR = "$(Get-Location)\Release"
 
