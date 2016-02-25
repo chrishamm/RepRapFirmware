@@ -16,6 +16,7 @@ Separated out from Platform.h by dc42 and extended by zpl
 
 #include "lwipopts.h"
 #include "ethernet_sam.h"
+
 #include "OutputMemory.h"
 
 // This class handles the network - typically an Ethernet.
@@ -28,18 +29,17 @@ Separated out from Platform.h by dc42 and extended by zpl
 // Currently we set the MSS (in file network/lwipopts.h) to 1432 which matches the value used by most versions of Windows
 // and therefore avoids additional memory use and fragmentation.
 
-const uint8_t NETWORK_TRANSACTION_COUNT = 16;				// Number of NetworkTransactions to be used for network IO
-const float TCP_WRITE_TIMEOUT = 8.0;	 					// Seconds to wait for data we have written to be acknowledged
+const size_t NETWORK_TRANSACTION_COUNT = 16;							// Number of NetworkTransactions to be used for network IO
+const float TCP_WRITE_TIMEOUT = 8.0;	 								// Seconds to wait for data we have written to be acknowledged
 
-
-const uint8_t IP_ADDRESS[4] = { 192, 168, 1, 10 };			// Need some sort of default...
+const uint8_t MAC_ADDRESS[6] = { 0xBE, 0xEF, 0xDE, 0xAD, 0xFE, 0xED };	// Need some sort of default...
+const uint8_t IP_ADDRESS[4] = { 192, 168, 1, 10 };
 const uint8_t NET_MASK[4] = { 255, 255, 255, 0 };
 const uint8_t GATE_WAY[4] = { 192, 168, 1, 1 };
 
+const uint16_t DEFAULT_HTTP_PORT = 80;
 const uint16_t FTP_PORT = 21;
 const uint16_t TELNET_PORT = 23;
-const uint16_t DEFAULT_HTTP_PORT = 80;
-
 
 /****************************************************************************************************/
 
@@ -82,9 +82,10 @@ class NetworkTransaction
 		void Set(pbuf *p, ConnectionState* c, TransactionStatus s);
 		TransactionStatus GetStatus() const { return status; }
 
-		size_t DataLength() const;
+		bool HasMoreDataToRead() const { return readingPb != nullptr; }
 		bool Read(char& b);
-		bool ReadBuffer(char *&buffer, unsigned int &len);
+		bool ReadBuffer(const char *&buffer, unsigned int &len);
+
 		void Write(char b);
 		void Write(const char* s);
 		void Write(StringRef ref);
@@ -114,7 +115,7 @@ class NetworkTransaction
 		ConnectionState* cs;
 		NetworkTransaction* volatile next;			// next NetworkTransaction in the list we are in
 		NetworkTransaction* nextWrite;				// next NetworkTransaction queued to write to assigned connection
-		pbuf *pb;									// linked list of incoming packet buffers
+		pbuf *pb, *readingPb;						// received packet queue and a pointer to the pbuf being read from
 		unsigned int bufferLength;					// total length of the packet buffer
 		unsigned int inputPointer;					// amount of data already taken from the first packet buffer
 

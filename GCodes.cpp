@@ -28,7 +28,7 @@
 #define DEGREE_SYMBOL        "\xC2\xB0"                              // degree-symbol encoding in UTF8
 
 GCodes::GCodes(Platform* p, Webserver* w) :
-	platform(p), active(false), webserver(w), stackPointer(0)
+	platform(p), active(false), webserver(w), stackPointer(0), fileStackPointer(0)
 {
 	httpGCode = new GCodeBuffer(platform, "http: ");
 	telnetGCode = new GCodeBuffer(platform, "telnet: ");
@@ -36,7 +36,7 @@ GCodes::GCodes(Platform* p, Webserver* w) :
 	serialGCode = new GCodeBuffer(platform, "serial: ");
 	auxGCode = new GCodeBuffer(platform, "aux: ");
 	fileMacroGCode = new GCodeBuffer(platform, "macro: ");
-	queuedGCode = new GCodeBuffer(platform, "queued: ");
+	queueGCode = new GCodeBuffer(platform, "queue: ");
 	auxGCodeReply = nullptr;
 }
 
@@ -96,7 +96,7 @@ void GCodes::Reset()
 	serialGCode->Init();
 	auxGCode->Init();
 	fileMacroGCode->Init();
-	queuedGCode->Init();
+	queueGCode->Init();
 	moveAvailable = false;
 	totalMoves = 0;
 	movesCompleted = 0;
@@ -105,8 +105,8 @@ void GCodes::Reset()
 	fileBeingWritten = nullptr;
 	endStopsToCheck = 0;
 	doingFileMacro = returningFromMacro = false;
-	macroSourceGCode = nullptr;
-	printStatus = PrintStatus::NotPaused;
+	macroSourceGCodeBuffer = waitingForMoveGCodeBuffer = nullptr;
+	pauseStatus = PauseStatus::NotPaused;
 	for(size_t drive = 0; drive < DRIVES; drive++)
 	{
 		pauseCoordinates[drive] = 0.0;
@@ -115,9 +115,8 @@ void GCodes::Reset()
 	doPauseMacro = false;
 	fractionOfFilePrinted = -1.0;
 	dwellWaiting = false;
-	stackPointer = 0;
+	stackPointer = fileStackPointer = 0;
 	lastMacroPosition = 0;
-	waitingForMoveToComplete = false;
 	probeCount = 0;
 	cannedCycleMoveCount = 0;
 	cannedCycleMoveQueued = false;
@@ -141,7 +140,7 @@ void GCodes::Spin()
 	// see if they are finished in order to feed them new codes.
 
 	// Macro
-	if (doingFileMacro && !fileMacroGCode->Active())
+	if (doingFileMacro && !fileMacroGCode->Active() && fileBeingPrinted.IsLive())
 	{
 		size_t i = 0;
 		do {
@@ -156,15 +155,14 @@ void GCodes::Spin()
 			}
 			else
 			{
-				if (!fileMacroGCode->IsEmpty())
+				// Cannot read any more from the file, so try to finish the last G-Code
+				if (fileMacroGCode->Put('\n'))
 				{
-					if (fileMacroGCode->Put('\n')) // In case there wasn't one ending the file
-					{
-						// Will be acted upon later
-						break;
-					}
+					// Will be acted upon later
+					break;
 				}
 
+				// Read from file has finished, close it and pop the stack
 				if (!fileMacroGCode->Active() && Pop())
 				{
 					fileStack[stackPointer + 1].Close();
@@ -254,38 +252,24 @@ void GCodes::Spin()
 	}
 
 	// Code Queue
-	if (internalCodeQueue != nullptr)
+	if (!queueGCode->Active() && internalCodeQueue != nullptr && internalCodeQueue->ExecuteAtMove() <= movesCompleted)
 	{
-		if (!queuedGCode->Active() && IsRunning())
+		// Process another queued G-code
+		queueGCodeSource = internalCodeQueue->GetSource();
+		if (!queueGCode->Put(internalCodeQueue->GetCode(), internalCodeQueue->GetCodeLength()))
 		{
-			// Check if the last queued code is complete in order to remove its entry
-			if (internalCodeQueue->IsExecuting())
-			{
-				CodeQueueItem *temp = internalCodeQueue;
-				internalCodeQueue = internalCodeQueue->Next();
-				temp->SetNext(releasedQueueItems);
-				releasedQueueItems = temp;
-			}
-			// Otherwise check if a new code can be fed
-			else if (internalCodeQueue->ExecuteAtMove() <= movesCompleted)
-			{
-				internalCodeQueue->Execute();
-				if (queuedGCode->Put(internalCodeQueue->GetCode(), internalCodeQueue->GetCodeLength()))
-				{
-					queuedGCode->SetFinished(ActOnCode(queuedGCode, true));
-				}
-			}
+			queueGCode->Put('\n');
 		}
-	}
-	else if ((totalMoves == movesCompleted) != 0)
-	{
-		// If we don't have any queued codes left and all moves are complete, we can safely reset our counters here
-		totalMoves = 0;
-		movesCompleted = 0;
+
+		// Release this item again
+		CodeQueueItem *temp = internalCodeQueue;
+		internalCodeQueue = internalCodeQueue->Next();
+		temp->SetNext(releasedQueueItems);
+		releasedQueueItems = temp;
 	}
 
 	// File
-	if (!doingFileMacro && !fileGCode->Active() && IsRunning() && fileBeingPrinted.IsLive())
+	if (!DoingFileMacro() && !fileGCode->Active() && fileBeingPrinted.IsLive())
 	{
 		size_t i = 0;
 		do {
@@ -300,10 +284,14 @@ void GCodes::Spin()
 			}
 			else
 			{
-				if (fileGCode->Put('\n')) // In case there wasn't one ending the file
+				// Cannot read any more from the file, so try to finish the last G-Code
+				if (fileGCode->Put('\n'))
 				{
-					fileGCode->SetFinished(ActOnCode(fileGCode));
+					// Will be acted upon later
+					break;
 				}
+
+				// Read from file has finished, close it and pop the stack
 				if (!fileGCode->Active() && internalCodeQueue == nullptr && Pop())
 				{
 					fileStack[stackPointer + 1].Close();
@@ -311,7 +299,7 @@ void GCodes::Spin()
 
 					if (platform->Emulating() == marlin)
 					{
-						// If we're emulating Marlin, try to send a notification to Pronterface
+						// If we're emulating Marlin, send a notification to Pronterface
 						HandleReply(fileGCode, false, "Done printing file\n");
 					}
 				}
@@ -326,7 +314,7 @@ void GCodes::Spin()
 	if (fileMacroGCode->Active())
 	{
 		const uint8_t lastStackPointer = stackPointer;
-		bool finished = ActOnCode(fileMacroGCode);
+		bool finished = ActOnCode(fileMacroGCode, false);
 		if ((stackPointer > lastStackPointer) && (fileStack[lastStackPointer] != fileBeingPrinted))
 		{
 			// We must finish the current G-Code for now if another nested macro is started
@@ -358,13 +346,15 @@ void GCodes::Spin()
 	{
 		auxGCode->SetFinished(ActOnCode(auxGCode));
 	}
-	if (queuedGCode->Active())
+	if (queueGCode->Active())
 	{
-		queuedGCode->SetFinished(ActOnCode(queuedGCode));
+		queueGCode->SetToolNumberAdjust(queueGCodeSource->GetToolNumberAdjust());
+		queueGCode->SetFinished(ActOnCode(queueGCode));
 	}
-	if (fileGCode->Active())
+	if (fileGCode->Active() && (fileStackPointer == stackPointer || macroSourceGCodeBuffer == fileGCode))
 	{
 		fileGCode->SetFinished(ActOnCode(fileGCode, false));
+		fileStackPointer = stackPointer;
 	}
 
 	platform->ClassReport(longWait);
@@ -393,12 +383,8 @@ void GCodes::Diagnostics()
 // be idle before you do something (for example homing an axis, or shutting down) call this
 // until it returns true.  As a side-effect it loads moveBuffer with the last
 // position and feedrate for you.
-
 bool GCodes::AllMovesAreFinishedAndMoveBufferIsLoaded()
 {
-	// Make sure other G-Code sources wait for this one to complete first...
-	waitingForMoveToComplete = true;
-
 	// Last one gone?
 	if (moveAvailable)
 		return false;
@@ -410,15 +396,11 @@ bool GCodes::AllMovesAreFinishedAndMoveBufferIsLoaded()
 
 	// Load the last position
 	reprap.GetMove()->GetCurrentUserPosition(moveBuffer, 0);
-
-	// Movement has stopped, return here
-	waitingForMoveToComplete = false;
 	return true;
 }
 
 // Save (some of) the state of the machine for recovery in the future.
 // Call repeatedly till it returns true.
-
 bool GCodes::Push()
 {
 	if (stackPointer >= STACK)
@@ -433,23 +415,18 @@ bool GCodes::Push()
 	drivesRelativeStack[stackPointer] = drivesRelative;
 	axesRelativeStack[stackPointer] = axesRelative;
 	feedrateStack[stackPointer] = moveBuffer[DRIVES];
-	for(size_t extruder=0; extruder<DRIVES-AXES; extruder++)
+	for(size_t extruder = 0; extruder < DRIVES - AXES; extruder++)
 	{
 		extruderPositionStack[stackPointer][extruder] = lastExtruderPosition[extruder];
 	}
 	doingFileMacroStack[stackPointer] = doingFileMacro;
 	fileStack[stackPointer].CopyFrom(fileBeingPrinted);
-	if (stackPointer == 0)
-	{
-		fractionOfFilePrinted = fileBeingPrinted.FractionRead();	// save this so that we don't return the fraction of the macro file read
-	}
 	stackPointer++;
 
 	return true;
 }
 
 // Recover a saved state.  Call repeatedly till it returns true.
-
 bool GCodes::Pop()
 {
 	if (stackPointer < 1)
@@ -462,10 +439,6 @@ bool GCodes::Pop()
 		return false;
 
 	stackPointer--;
-	if (stackPointer == 1)
-	{
-		fractionOfFilePrinted = -1.0;			// restore live updates of fraction read from the file being printed
-	}
 	drivesRelative = drivesRelativeStack[stackPointer];
 	axesRelative = axesRelativeStack[stackPointer];
 	moveBuffer[DRIVES] = feedrateStack[stackPointer];
@@ -484,25 +457,21 @@ bool GCodes::Pop()
 // Move expects all axis movements to be absolute, and all
 // extruder drive moves to be relative.  This function serves that.
 // If applyLimits is true and we have homed the relevant axes, then we don't allow movement beyond the bed.
-
 bool GCodes::LoadMoveBufferFromGCode(GCodeBuffer *gb, bool doingG92, bool applyLimits)
 {
 	// Zero every extruder drive as some drives may not be changed
-
 	for(size_t drive = AXES; drive < DRIVES; drive++)
 	{
 		moveBuffer[drive] = 0.0;
 	}
 
 	// Deal with feed rate
-
 	if (gb->Seen(FEEDRATE_LETTER))
 	{
 		moveBuffer[DRIVES] = gb->GetFValue() * distanceScale * SECONDS_TO_MINUTES; // G Code feedrates are in mm/minute; we need mm/sec
 	}
 
 	// First do extrusion, and check, if we are extruding, that we have a tool to extrude with
-
 	Tool* tool = reprap.GetCurrentTool();
 
 	if (gb->Seen(EXTRUDE_LETTER))
@@ -540,7 +509,6 @@ bool GCodes::LoadMoveBufferFromGCode(GCodeBuffer *gb, bool doingG92, bool applyL
 			}
 
 			// Set the drive values for this tool.
-
 			for(size_t eDrive = 0; eDrive < eMoveCount; eDrive++)
 			{
 				size_t drive = tool->Drive(eDrive);
@@ -568,11 +536,20 @@ bool GCodes::LoadMoveBufferFromGCode(GCodeBuffer *gb, bool doingG92, bool applyL
 	}
 
 	// Now the movement axes
+	bool doingResumeMove = false;
+	if (gb->Seen('R') && gb->GetIValue() > 0)
+	{
+		if (IsRunning())
+		{
+			platform->Message(GENERIC_MESSAGE, "Error: Resume moves are only allowed while the print is paused!\n");
+			return false;
+		}
+		doingResumeMove = true;
+	}
 
-	const Tool *currentTool = reprap.GetCurrentTool();
 	for(size_t axis = 0; axis < AXES; axis++)
 	{
-		if(gb->Seen(axisLetters[axis]))
+		if (gb->Seen(axisLetters[axis]))
 		{
 			float moveArg = gb->GetFValue() * distanceScale;
 
@@ -588,13 +565,17 @@ bool GCodes::LoadMoveBufferFromGCode(GCodeBuffer *gb, bool doingG92, bool applyL
 			}
 			else
 			{
-				if (axesRelative)
+				if (doingResumeMove)
+				{
+					moveArg += pauseCoordinates[axis];
+				}
+				else if (axesRelative)
 				{
 					moveArg += moveBuffer[axis];
 				}
-				else if (currentTool != nullptr)
+				else if (tool != nullptr)
 				{
-					moveArg -= currentTool->GetOffset()[axis];		// adjust requested position to compensate for tool offset
+					moveArg -= tool->GetOffset()[axis];		// adjust requested position to compensate for tool offset
 				}
 
 				// If on a Cartesian printer and applying limits, limit all axes
@@ -611,6 +592,10 @@ bool GCodes::LoadMoveBufferFromGCode(GCodeBuffer *gb, bool doingG92, bool applyL
 				}
 			}
 			moveBuffer[axis] = moveArg;
+		}
+		else if (doingResumeMove)
+		{
+			moveBuffer[axis] = pauseCoordinates[axis];
 		}
 	}
 
@@ -639,7 +624,6 @@ bool GCodes::LoadMoveBufferFromGCode(GCodeBuffer *gb, bool doingG92, bool applyL
 // If the Move class can't receive the move (i.e. things have to wait), return 0.
 // If we have queued the move and the caller doesn't need to wait for it to complete, return 1.
 // If we need to wait for the move to complete before doing another one (because endstops are checked in this move), return 2.
-
 int GCodes::SetUpMove(GCodeBuffer *gb, StringRef& reply)
 {
 	// Last one gone yet?
@@ -715,7 +699,6 @@ int GCodes::SetUpMove(GCodeBuffer *gb, StringRef& reply)
 }
 
 // The Move class calls this function to find what to do next.
-
 bool GCodes::ReadMove(float m[], EndstopChecks& ce, uint8_t& rMoveType, FilePosition& fPos)
 {
 	if (!moveAvailable)
@@ -723,7 +706,7 @@ bool GCodes::ReadMove(float m[], EndstopChecks& ce, uint8_t& rMoveType, FilePosi
 		return false;
 	}
 
-	for (size_t i = 0; i <= DRIVES; i++)			// 1 more for feedrate
+	for(size_t i = 0; i <= DRIVES; i++)			// 1 more for feedrate
 	{
 		m[i] = moveBuffer[i];
 	}
@@ -744,24 +727,26 @@ void GCodes::ClearMove()
 bool GCodes::DoFileMacro(const GCodeBuffer *gb, const char* fileName)
 {
 	// Can we run another macro file at this point?
-	
 	if (doingFileMacro && gb != fileMacroGCode)
 	{
 		return false;
 	}
 
 	// Are we returning from a macro?
-
 	if (returningFromMacro)
 	{
 		// We can confirm this macro was called by a verified source, so make it return
-		if (gb == fileMacroGCode || gb == macroSourceGCode)
+		if (gb == fileMacroGCode || gb == macroSourceGCodeBuffer)
 		{
 			returningFromMacro = false;
 			if (!doingFileMacro)
 			{
-				// Only reset the macro source if we've actually finished everything
-				macroSourceGCode = nullptr;
+				// Macro file has been processed, reset some values here
+				macroSourceGCodeBuffer = nullptr;
+				if (IsRunning())
+				{
+					fractionOfFilePrinted = -1.0;
+				}
 			}
 			return true;
 		}
@@ -770,7 +755,11 @@ bool GCodes::DoFileMacro(const GCodeBuffer *gb, const char* fileName)
 		return false;
 	}
 
-	// See if we can push some values on the stack
+	// See if we can save the file progress and push some values on the stack
+	if (!doingFileMacro && fileBeingPrinted.IsLive())
+	{
+		fractionOfFilePrinted = fileBeingPrinted.FractionRead();
+	}
 
 	if (!Push())
 	{
@@ -778,7 +767,6 @@ bool GCodes::DoFileMacro(const GCodeBuffer *gb, const char* fileName)
 	}
 
 	// Then check if we can open the file
-
 	FileStore *f;
 	if (StringStartsWith(fileName, FS_PREFIX))
 	{
@@ -827,7 +815,6 @@ bool GCodes::DoFileMacro(const GCodeBuffer *gb, const char* fileName)
 	fileBeingPrinted.Set(f);
 
 	// Deal with nested macros
-
 	if (gb == fileMacroGCode)
 	{
 		// Rewind back to the position where the last code started so it's called again later
@@ -836,11 +823,10 @@ bool GCodes::DoFileMacro(const GCodeBuffer *gb, const char* fileName)
 	else
 	{
 		// Keep track of which GCodeBuffer initiated this macro file
-		macroSourceGCode = gb;
+		macroSourceGCodeBuffer = gb;
 	}
 
 	// Set some values so the macro file gets processed properly
-
 	doingFileMacro = true;
 	lastMacroPosition = 0;
 	fileMacroGCode->Init();
@@ -850,26 +836,28 @@ bool GCodes::DoFileMacro(const GCodeBuffer *gb, const char* fileName)
 
 bool GCodes::FileMacroCyclesReturn()
 {
-	if (!DoingFileMacro())
-		return true;
+	// Go up through the stack and close all macro files
+	while (doingFileMacro) {
+		if (fileBeingPrinted.IsLive())
+		{
+			fileBeingPrinted.Close();
+		}
 
-	if (!AllMovesAreFinishedAndMoveBufferIsLoaded())
-		return false;
+		if (!Pop())
+		{
+			return false;
+		}
+	}
 
-	fileBeingPrinted.Close();
-	doingFileMacro = false;
+	// Clean up when ready
 	returningFromMacro = true;
-	//fileMacroGCode->Init();
-	//macroSourceGCode = nullptr;
-
-	return Pop();
+	return true;
 }
 
 // To execute any move, call this until it returns true.
 // moveToDo[] entries corresponding with false entries in action[] will
 // be ignored.  Recall that moveToDo[DRIVES] should contain the feed rate
 // you want (if action[DRIVES] is true).
-
 bool GCodes::DoCannedCycleMove(EndstopChecks ce)
 {
 	// Is the move already running?
@@ -1678,7 +1666,6 @@ void GCodes::QueueFileToPrint(const char* fileName)
 		}
 
 		fileGCode->SetToolNumberAdjust(0);
-		queuedGCode->SetToolNumberAdjust(0);
 
 		for (size_t extruder = AXES; extruder < DRIVES; extruder++)
 		{
@@ -1759,7 +1746,6 @@ bool GCodes::DoDwellTime(float dwell)
 }
 
 // Set offset, working and standby temperatures for a tool. I.e. handle a G10.
-
 void GCodes::SetOrReportOffsets(StringRef& reply, GCodeBuffer *gb)
 {
 	if (gb->Seen('P'))
@@ -1846,7 +1832,6 @@ void GCodes::ManageTool(GCodeBuffer *gb, StringRef& reply)
 		{
 			int adjust = gb->GetIValue();
 			gb->SetToolNumberAdjust(adjust);
-			queuedGCode->SetToolNumberAdjust(adjust);
 		}
 		return;
 	}
@@ -1912,7 +1897,6 @@ void GCodes::ManageTool(GCodeBuffer *gb, StringRef& reply)
 }
 
 // Does what it says.
-
 void GCodes::DisableDrives()
 {
 	for(size_t drive = 0; drive < DRIVES; drive++)
@@ -1926,7 +1910,6 @@ void GCodes::DisableDrives()
 }
 
 // Does what it says.
-
 void GCodes::SetEthernetAddress(GCodeBuffer *gb, int mCode)
 {
 	byte eth[4];
@@ -1978,7 +1961,6 @@ void GCodes::SetEthernetAddress(GCodeBuffer *gb, int mCode)
 	}
 }
 
-
 void GCodes::SetMACAddress(GCodeBuffer *gb)
 {
 	uint8_t mac[6];
@@ -2019,9 +2001,9 @@ void GCodes::SetMACAddress(GCodeBuffer *gb)
 void GCodes::HandleReply(GCodeBuffer *gb, bool error, const char *reply)
 {
 	// If we're executing a queued code, make sure gb points to the right source
-	if (gb == queuedGCode && internalCodeQueue != nullptr && internalCodeQueue->IsExecuting())
+	if (gb == queueGCode)
 	{
-		gb = internalCodeQueue->GetSource();
+		gb = queueGCodeSource;
 	}
 
 	// Don't report "ok" responses if a (macro) file is being processed
@@ -2154,9 +2136,9 @@ void GCodes::HandleReply(GCodeBuffer *gb, bool error, OutputBuffer *reply)
 	}
 
 	// If we're executing a queued code, make sure gb points to the right source
-	if (gb == queuedGCode && internalCodeQueue != nullptr && internalCodeQueue->IsExecuting())
+	if (gb == queueGCode)
 	{
-		gb = internalCodeQueue->GetSource();
+		gb = queueGCodeSource;
 	}
 
 	// Second UART device, e.g. dc42's PanelDue. Do NOT use emulation for this one!
@@ -2408,7 +2390,9 @@ void GCodes::SetHeaterParameters(GCodeBuffer *gb, StringRef& reply)
 			if (gb->Seen('X'))
 			{
 				int thermistor = gb->GetIValue();
-				if (thermistor >= 0 && thermistor < HEATERS)
+				if (   (0 <= thermistor && thermistor < HEATERS)
+						|| ((int)MAX31855_START_CHANNEL <= thermistor && thermistor < (int)(MAX31855_START_CHANNEL + MAX31855_DEVICES))
+				   )
 				{
 					platform->SetThermistorNumber(heater, thermistor);
 				}
@@ -2455,7 +2439,6 @@ void GCodes::SetToolHeaters(Tool *tool, float temperature)
 }
 
 // Here we must check for codes that shall be executed as soon as all currently queued moves have finished.
-
 bool GCodes::CanQueueCode(GCodeBuffer *gb) const
 {
 	// Check for G-Codes
@@ -2508,7 +2491,6 @@ bool GCodes::CanQueueCode(GCodeBuffer *gb) const
 // If the code to act on is completed, this returns true,
 // otherwise false.  It is called repeatedly for a given
 // code until it returns true for that code.
-
 bool GCodes::ActOnCode(GCodeBuffer *gb, bool executeImmediately)
 {
 	// Discard empty buffers right away
@@ -2537,49 +2519,54 @@ bool GCodes::ActOnCode(GCodeBuffer *gb, bool executeImmediately)
 		{
 			return HandleTcode(gb);
 		}
-	}
-	else
-	{
-		// Run the next code immediately and wait for it if there is no free item available
-		if (releasedQueueItems == nullptr)
-		{
-			if (!internalCodeQueue->IsExecuting())
-			{
-				internalCodeQueue->Execute();
-				if (queuedGCode->Put(internalCodeQueue->GetCode(), internalCodeQueue->GetCodeLength()))
-				{
-					queuedGCode->SetFinished(ActOnCode(queuedGCode));
-				}
-			}
-			return false;
-		}
 
-		// Set up a new queue item
-		CodeQueueItem *newItem = releasedQueueItems;
-		releasedQueueItems = releasedQueueItems->Next();
-		newItem->Init(gb, totalMoves);
-
-		// And append it to the queue so it's executed once all moves have finished
-		if (internalCodeQueue == nullptr)
-		{
-			internalCodeQueue = newItem;
-		}
-		else
-		{
-			CodeQueueItem *lastItem = internalCodeQueue;
-			while (lastItem->Next() != nullptr)
-			{
-				lastItem = lastItem->Next();
-			}
-			lastItem->SetNext(newItem);
-		}
-
-		// Queued G-Codes will send their own replies later
+		// An invalid buffer gets discarded
+		HandleReply(gb, false, "");
 		return true;
 	}
 
-	// An invalid buffer gets discarded
-	HandleReply(gb, false, "");
+	// Try to queue this code. If we cannot store it, attempt to run the first queued code and wait for it to complete
+	if (releasedQueueItems == nullptr)
+	{
+		if (queueGCode->Active())
+		{
+			// Cannot do anything. The last queued G-Code has not finished yet
+			return false;
+		}
+
+		// Run the first item
+		queueGCodeSource = internalCodeQueue->GetSource();
+		if (!queueGCode->Put(internalCodeQueue->GetCode(), internalCodeQueue->GetCodeLength()))
+		{
+			queueGCode->Put('\n');
+		}
+
+		// Remove it from the chain
+		CodeQueueItem *temp = internalCodeQueue;
+		internalCodeQueue = internalCodeQueue->Next();
+		temp->SetNext(releasedQueueItems);
+		releasedQueueItems = temp;
+	}
+
+	// Set up a new queue item
+	CodeQueueItem *newItem = releasedQueueItems;
+	releasedQueueItems = releasedQueueItems->Next();
+	newItem->Init(gb, totalMoves);
+
+	// Append it so it's executed once all pending moves have finished
+	if (internalCodeQueue == nullptr)
+	{
+		internalCodeQueue = newItem;
+	}
+	else
+	{
+		CodeQueueItem *lastItem = internalCodeQueue;
+		while (lastItem->Next() != nullptr)
+		{
+			lastItem = lastItem->Next();
+		}
+		lastItem->SetNext(newItem);
+	}
 	return true;
 }
 
@@ -2603,45 +2590,35 @@ bool GCodes::HandleGcode(GCodeBuffer* gb)
 	{
 		case 0: // There are no rapid moves...
 		case 1: // Ordinary move
-			if (waitingForMoveToComplete)
+			if (waitingForMoveGCodeBuffer != nullptr)
 			{
-				// We're still waiting for a homing move or another G-Code source
-				// is requesting an immediate movement stop. We must to wait for it
-				// before we set up any new moves, or else we may get a race condition.
-				result = AllMovesAreFinishedAndMoveBufferIsLoaded();
-			}
-			// Check for 'R' parameter here to go back to the coordinates at which the print was paused
-			else if (gb->Seen('R') && gb->GetIValue() > 0 && !IsRunning())
-			{
-				if (moveAvailable)
+				if (waitingForMoveGCodeBuffer == gb && AllMovesAreFinishedAndMoveBufferIsLoaded())
 				{
-					return false;
+					// Homing move is complete. Reset the GCodeBuffer reference and move on
+					waitingForMoveGCodeBuffer = nullptr;
+					result = true;
 				}
-
-				for (size_t axis = 0; axis < AXES; ++axis)
+				else
 				{
-					float offset = gb->Seen(axisLetters[axis]) ? gb->GetFValue() * distanceScale : 0.0;
-					moveBuffer[axis] = pauseCoordinates[axis] + offset;
+					// Cannot perform any moves while a homing move is being processed. Wait for it to finish first
+					result = false;
 				}
-				for (size_t drive = AXES; drive < DRIVES; ++drive)
-				{
-					moveBuffer[drive] = 0.0;
-				}
-				if (gb->Seen(FEEDRATE_LETTER))
-				{
-					moveBuffer[DRIVES] = gb->GetFValue() * distanceScale * SECONDS_TO_MINUTES; // G Code feedrates are in mm/minute; we need mm/sec
-				}
-
-				endStopsToCheck = 0;
-				moveType = 0;
-				moveAvailable = true;
-				moveFilePos = NO_FILE_POSITION;
 			}
 			else
 			{
+				if (gb == fileGCode && !IsRunning())
+				{
+					// File print has been paused. Discard this move, it will be called again when the print is resumed
+					return true;
+				}
+
+				// Set up a new move
 				int res = SetUpMove(gb, reply);
-				waitingForMoveToComplete = (res == 2);
 				result = (res == 1);
+				if (res == 2)
+				{
+					waitingForMoveGCodeBuffer = gb;
+				}
 			}
 			break;
 
@@ -2983,23 +2960,19 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			// no break otherwise
 
 		case 24: // Print/resume-printing the selected file
-			// We must be in a safe state to do this...
 			if (IsPausing())
 			{
+				// Don't continue if the file print is still being paused
 				return false;
 			}
-			if (DoingFileMacro())
+
+			// Check if the print can be resumed from this G-code source
+			if (DoingFileMacro() && macroSourceGCodeBuffer != gb)
 			{
-				if (gb == macroSourceGCode)
+				if (gb == fileGCode)
 				{
 					error = true;
-					reply.copy("Prints cannot be resumed using macro files");
-					break;
-				}
-				else if (gb == fileGCode)
-				{
-					error = true;
-					reply.copy("M24 is not allowed in G-code files");
+					reply.copy("M24 is not allowed in G-code files\n");
 					break;
 				}
 				else
@@ -3009,7 +2982,7 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 				}
 			}
 
-			// See if we're printing a file
+			// Check if a file to print has been set
 			if (!fileToPrint.IsLive())
 			{
 				reply.copy("Cannot resume print, because no print is in progress!\n");
@@ -3017,28 +2990,39 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 				break;
 			}
 
-			// We're resuming a paused print, so we may need to run the resume macro first.
-			if (IsPaused())
+			// Is a new file print being started?
+			if (IsRunning())
 			{
-				printStatus = PrintStatus::Resuming;
-				if (doPauseMacro && !DoFileMacro(gb, RESUME_G))
+				if (!Push())
 				{
-					result = false;
-					break;
+					return false;
 				}
-				doPauseMacro = false;
+				fileStackPointer = stackPointer;
+				reprap.GetPrintMonitor()->StartedPrint();
 			}
 
-			if (IsResuming())
+			// No - resume a live print
+			else
 			{
-				// We must have finished all pending moves first
+				pauseStatus = PauseStatus::Resuming;
+
+				// Run the resume macro first (if necessary)
+				if (doPauseMacro)
+				{
+					if (!DoFileMacro(gb, RESUME_G))
+					{
+						return false;
+					}
+					doPauseMacro = false;
+				}
+
+				// Make sure we go back to the right coordinates first
 				if (!AllMovesAreFinishedAndMoveBufferIsLoaded())
 				{
 					return false;
 				}
 
-				// If a live print is resumed, make sure we go back to the right coordinates first
-				float liveCoordinates[DRIVES+1];
+				float liveCoordinates[DRIVES];
 				reprap.GetMove()->LiveCoordinates(liveCoordinates);
 
 				bool needExtraMove = false;
@@ -3067,38 +3051,23 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 					moveType = 0;
 					endStopsToCheck = 0;
 					moveFilePos = NO_FILE_POSITION;
-
-					result = false;
-					break;
-				}
-				else
-				{
-					// We do overwrite the feedrate here with the previous one of the file print
-					moveBuffer[DRIVES] = pauseCoordinates[DRIVES];
-					reprap.GetMove()->SetFeedrate(pauseCoordinates[DRIVES]);
-
-					reply.copy("Print resumed\n");
-				}
-			}
-			else
-			{
-				// If we're actually starting a new print, push the stack and notify PrintMonitor
-				if (!Push())
-				{
 					return false;
 				}
-				reprap.GetPrintMonitor()->StartedPrint();
+
+				// We do overwrite the feedrate here with the previous one of the file print
+				moveBuffer[DRIVES] = pauseCoordinates[DRIVES];
+				reprap.GetMove()->SetFeedrate(pauseCoordinates[DRIVES]);
+				for (size_t i = 0; i < NUM_FANS; ++i)
+				{
+					platform->SetFanValue(i, pausedFanValues[i]);
+				}
+				reply.copy("Print resumed\n");
 			}
-			printStatus = PrintStatus::NotPaused;
 
 			// Resume printing
-			for (size_t i = 0; i < NUM_FANS; ++i)
-			{
-				platform->SetFanValue(i, pausedFanValues[i]);
-			}
 			fileBeingPrinted.MoveFrom(fileToPrint);
 			fractionOfFilePrinted = -1.0;
-
+			pauseStatus = PauseStatus::NotPaused;
 			break;
 
 		case 226: // Gcode Initiated Pause
@@ -3107,122 +3076,127 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			// no break
 
 		case 25: // Pause the print
-			if (doingFileMacro && macroSourceGCode != gb)
+			if (!IsPausing())
 			{
-				if (gb == fileMacroGCode)
+				// Don't allow macro files to pause file prints, this would mess with the file logic
+				if (doingFileMacro && macroSourceGCodeBuffer != gb)
 				{
-					error = true;
-					reply.copy("Pausing prints using macro files is not supported\n");
-					break;
+					if (gb == fileMacroGCode)
+					{
+						error = true;
+						reply.copy("Pausing prints using macro files is not supported\n");
+						break;
+					}
+
+					// Wait for other macros to finish first
+					return false;
 				}
 
-				printStatus = PrintStatus::WaitingForMacro;
-				return false;
-			}
-
-			if (printStatus != PrintStatus::Pausing)
-			{
-				if (!reprap.GetPrintMonitor()->IsPrinting())
+				// Allow this command only if a file is being printed
+				if (!fileBeingPrinted.IsLive())
 				{
 					reply.copy("Cannot pause print, because no file is being printed!\n");
 					error = true;
+					break;
 				}
+
+				// User-initiated pause
+				if (code == 25)
+				{
+					unsigned int skippedMoves;
+					FilePosition fPos = reprap.GetMove()->PausePrint(pauseCoordinates, skippedMoves);
+					doPauseMacro = !reprap.GetMove()->NoLiveMovement();
+
+					// Rewind the file being printed to the position after the last move to be executed
+					if (fPos != NO_FILE_POSITION && fileBeingPrinted.IsLive())
+					{
+						fileBeingPrinted.Seek(fPos);
+					}
+
+					// Deal with the amount of (raw) extrusion we're about to skip
+					for (size_t extruder = 0; extruder < DRIVES - AXES; extruder++)
+					{
+						lastExtruderPosition[extruder] -= pauseCoordinates[extruder + AXES];
+					}
+
+					// Take care of the code queue (purge orphaned entries)
+					totalMoves -= skippedMoves;
+					CodeQueueItem *item = internalCodeQueue, *lastItem = nullptr;
+					while (item != nullptr)
+					{
+						if (item->GetSource() == fileGCode && item->ExecuteAtMove() > totalMoves)
+						{
+							CodeQueueItem *nextItem = item->Next();
+							item->SetNext(internalCodeQueue);
+							internalCodeQueue = item;
+
+							if (lastItem != nullptr)
+							{
+								lastItem->SetNext(nextItem);
+							}
+							item = nextItem;
+						}
+						else
+						{
+							lastItem = item;
+							item = item->Next();
+						}
+					}
+
+					// If there is any move left, clear it now
+					if (moveAvailable)
+					{
+						ClearMove();
+					}
+
+					if (reprap.Debug(moduleGcodes))
+					{
+						platform->MessageF(GENERIC_MESSAGE, "Paused print, file offset=%u\n", fPos);
+					}
+				}
+
+				// G-code initiated pause
 				else
 				{
-					printStatus = PrintStatus::Pausing;
-					result = false;
-					doPauseMacro = (code == 226) || (!reprap.GetMove()->NoLiveMovement());
+					doPauseMacro = true;
 
-					if (code == 25)
+					for (size_t axis = 0; axis < AXES; ++axis)
 					{
-						// Pausing a print via another input source
-						unsigned int skippedMoves;
-						FilePosition fPos = reprap.GetMove()->PausePrint(pauseCoordinates, skippedMoves);
-
-						// Rewind the file being printed to the position after the last move to be executed
-						if (fPos != NO_FILE_POSITION && fileBeingPrinted.IsLive())
-						{
-							fileBeingPrinted.Seek(fPos);
-						}
-
-						// Deal with the amount of (raw) extrusion we're about to skip
-						for (size_t extruder = 0; extruder < DRIVES - AXES; extruder++)
-						{
-							lastExtruderPosition[extruder] -= pauseCoordinates[extruder + AXES];
-						}
-
-						// Take care of the code queue (purge duplicate entries)
-						totalMoves -= skippedMoves;
-						CodeQueueItem *item = internalCodeQueue, *lastItem = nullptr;
-						while (item != nullptr)
-						{
-							if (item->ExecuteAtMove() > totalMoves)
-							{
-								CodeQueueItem *nextItem = item->Next();
-								item->SetNext(internalCodeQueue);
-								internalCodeQueue = item;
-
-								if (lastItem != nullptr)
-								{
-									lastItem->SetNext(nextItem);
-								}
-								item = nextItem;
-							}
-							else
-							{
-								lastItem = item;
-								item = item->Next();
-							}
-						}
-
-						// If there is any move left, clear it now
-						if (moveAvailable)
-						{
-							ClearMove();
-						}
-
-						if (reprap.Debug(moduleGcodes))
-						{
-							platform->MessageF(GENERIC_MESSAGE, "Paused print, file offset=%u\n", fPos);
-						}
+						pauseCoordinates[axis] = moveBuffer[axis];
 					}
-					else
+					for (size_t extruder = AXES; extruder < DRIVES; ++extruder)
 					{
-						// Pausing a file print because of a command in the file itself
-						for (size_t axis = 0; axis < AXES; ++axis)
-						{
-							pauseCoordinates[axis] = moveBuffer[axis];
-						}
-						for (size_t extruder = AXES; extruder < DRIVES; ++extruder)
-						{
-							pauseCoordinates[extruder] = 0.0;
-						}
-						pauseCoordinates[DRIVES] = moveBuffer[DRIVES];
+						pauseCoordinates[extruder] = 0.0;
 					}
-
-					for (size_t i = 0; i < NUM_FANS; ++i)
-					{
-						pausedFanValues[i] = platform->GetFanValue(i);
-					}
-					fractionOfFilePrinted = fileBeingPrinted.FractionRead();
-					fileToPrint.MoveFrom(fileBeingPrinted);
+					pauseCoordinates[DRIVES] = moveBuffer[DRIVES];
 				}
+
+				fractionOfFilePrinted = fileBeingPrinted.FractionRead();
+				fileToPrint.MoveFrom(fileBeingPrinted);
+				pauseStatus = PauseStatus::Pausing;
 			}
-			// We're pausing, so wait for all pending moves to finish first.
-			else if (DoingFileMacro() || AllMovesAreFinishedAndMoveBufferIsLoaded())
+
+			// The print is being paused. Wait for all moves to stop and record the last fan values
+			if (!DoingFileMacro())
 			{
-				// We're done if we either don't need to run the pause macro, or if the macro file has finished
-				result = (!doPauseMacro || DoFileMacro(gb, PAUSE_G));
-				if (result)
+				if (!AllMovesAreFinishedAndMoveBufferIsLoaded())
 				{
-					printStatus = PrintStatus::Paused;
+					return false;
+				}
+
+				for (size_t i = 0; i < NUM_FANS; ++i)
+				{
+					pausedFanValues[i] = platform->GetFanValue(i);
 				}
 			}
-			else
+
+			// Run the pause macro (if necessary)
+			if (doPauseMacro && !DoFileMacro(gb, PAUSE_G))
 			{
-				// We haven't stopped yet...
-				result = false;
+				return false;
 			}
+
+			pauseStatus = PauseStatus::Paused;
 			break;
 
 		case 26: // Set SD position
@@ -3610,7 +3584,7 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 				{
 					seen = true;
 					long heaters[HEATERS];
-					unsigned int numH = HEATERS;
+					size_t numH = HEATERS;
 					gb->GetLongArray(heaters, numH);
 					// Note that M106 H-1 disables thermostatic mode. The following code implements that automatically.
 					uint16_t hh = 0;
@@ -3662,10 +3636,10 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 				if (gb->Seen('P'))
 				{
 					fanNumber = gb->GetIValue();
-					if (fanNumber < 0 || fanNumber > 1)
+					if (fanNumber < 0 || fanNumber > (int)NUM_FANS)
 					{
 						error = true;
-						reply.printf("Fan value: %i is invalid, 0 or 1 are valid\n", fanNumber);
+						reply.printf("Fan index %d is invalid, 0..%d are valid\n", fanNumber, NUM_FANS);
 						break;
 					}
 				}
@@ -5303,6 +5277,10 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			}
 			break;
 
+		/*case 997: // Perform firmware update
+			platform->UpdateFirmware();
+			break;*/
+
 		case 998: // Request resend of line
 			if (gb->Seen('P'))
 			{
@@ -5558,12 +5536,11 @@ void GCodes::CancelPrint()
 		item->SetNext(releasedQueueItems);
 		releasedQueueItems = item;
 	}
-	queuedGCode->Clear();
 
 	totalMoves = movesCompleted = 0;
 	ClearMove();
 
-	printStatus = PrintStatus::NotPaused;
+	pauseStatus = PauseStatus::NotPaused;
 	fractionOfFilePrinted = -1.0;
 	fileBeingPrinted.Close();
 
@@ -5609,22 +5586,22 @@ bool GCodes::HaveAux() const
 
 bool GCodes::IsPausing() const
 {
-	return (printStatus == PrintStatus::WaitingForMacro || printStatus == PrintStatus::Pausing);
+	return (pauseStatus == PauseStatus::Pausing);
 }
 
 bool GCodes::IsPaused() const
 {
-	return (printStatus == PrintStatus::Paused);
+	return (pauseStatus == PauseStatus::Paused);
 }
 
 bool GCodes::IsResuming() const
 {
-	return (printStatus == PrintStatus::Resuming);
+	return (pauseStatus == PauseStatus::Resuming);
 }
 
 bool GCodes::IsRunning() const
 {
-	return (!IsPausing() && !IsPaused() && !IsResuming());
+	return (pauseStatus == PauseStatus::NotPaused);
 }
 
 //*************************************************************************************
@@ -5633,19 +5610,17 @@ bool GCodes::IsRunning() const
 
 CodeQueueItem::CodeQueueItem(CodeQueueItem *n) : codeLength(0), source(nullptr), next(n)
 {
-	code[0] = 0;
 }
 
 void CodeQueueItem::Init(GCodeBuffer *gb, unsigned int executeAtMove)
 {
 	moveToExecute = executeAtMove;
 	next = nullptr;
-	executing = false;
 
 	codeLength = strlen(gb->Buffer());
 	if (codeLength >= ARRAY_SIZE(code))
 	{
-		reprap.GetPlatform()->Message(GENERIC_MESSAGE, "Error: Invalid string passed to code queue initializer\n");
+		reprap.GetPlatform()->Message(GENERIC_MESSAGE, "Error: Invalid string passed to code queue initialiser\n");
 		code[0] = 0;
 		codeLength = 0;
 		source = nullptr;
@@ -5656,390 +5631,6 @@ void CodeQueueItem::Init(GCodeBuffer *gb, unsigned int executeAtMove)
 		code[codeLength] = 0;
 		source = gb;
 	}
-}
-
-void CodeQueueItem::SetNext(CodeQueueItem *n)
-{
-	next = n;
-}
-
-CodeQueueItem *CodeQueueItem::Next() const
-{
-	return next;
-}
-
-unsigned int CodeQueueItem::ExecuteAtMove() const
-{
-	return moveToExecute;
-}
-
-const char *CodeQueueItem::GetCode() const
-{
-	return code;
-}
-
-size_t CodeQueueItem::GetCodeLength() const
-{
-	return codeLength;
-}
-
-GCodeBuffer *CodeQueueItem::GetSource() const
-{
-	return source;
-}
-
-
-void CodeQueueItem::Execute()
-{
-	executing = true;
-}
-
-bool CodeQueueItem::IsExecuting() const
-{
-	return executing;
-}
-
-
-//*************************************************************************************
-
-// This class stores a single G Code and provides functions to allow it to be parsed
-
-GCodeBuffer::GCodeBuffer(Platform* p, const char* id)
-{
-	platform = p;
-	identity = id;
-	writingFileDirectory = nullptr; // Has to be done here as Init() is called every line.
-	toolNumberAdjust = 0;
-	checksumRequired = false;
-}
-
-void GCodeBuffer::Init()
-{
-	gcodePointer = 0;
-	readPointer = -1;
-	inComment = false;
-	state = GCodeState::idle;
-}
-
-int GCodeBuffer::CheckSum()
-{
-	int cs = 0;
-	for(size_t i = 0; gcodeBuffer[i] != '*' && gcodeBuffer[i] != 0; i++)
-	{
-		cs = cs ^ gcodeBuffer[i];
-	}
-	cs &= 0xff;  // Defensive programming...
-	return cs;
-}
-
-// Add a byte to the code being assembled.  If false is returned, the code is
-// not yet complete.  If true, it is complete and ready to be acted upon.
-bool GCodeBuffer::Put(char c)
-{
-	if (c == '\r')
-	{
-		// Ignore carriage return, it messes up filenames sometimes if it appears in macro files etc.
-		// Alternatively, we could handle it in the same way as linefeed, and add an optimisation to ignore blank lines.
-		return false;
-	}
-
-	gcodeBuffer[gcodePointer] = c;
-
-	if (c == ';')
-	{
-		inComment = true;
-	}
-	else if (c == '\n' || c == 0)
-	{
-		gcodeBuffer[gcodePointer] = 0;
-		Init();
-		if (reprap.Debug(moduleGcodes) && gcodeBuffer[0] && !writingFileDirectory) // Don't bother with blank/comment lines
-		{
-			platform->MessageF(HOST_MESSAGE, "%s%s\n", identity, gcodeBuffer);
-		}
-
-		// Deal with line numbers and checksums
-
-		if (Seen('*'))
-		{
-			int csSent = GetIValue();
-			int csHere = CheckSum();
-			Seen('N');
-			if (csSent != csHere)
-			{
-				snprintf(gcodeBuffer, GCODE_LENGTH, "M998 P%d", GetIValue());
-				Init();
-				return true;
-			}
-
-			// Strip out the line number and checksum
-
-			gcodePointer = 0;
-			while (gcodeBuffer[gcodePointer] != ' ' && gcodeBuffer[gcodePointer] != 0)
-			{
-				gcodePointer++;
-			}
-
-			// Anything there?
-
-			if (gcodeBuffer[gcodePointer] == 0)
-			{
-				// No...
-				gcodeBuffer[0] = 0;
-				Init();
-				return false;
-			}
-
-			// Yes...
-
-			gcodePointer++;
-			int gp2 = 0;
-			while (gcodeBuffer[gcodePointer] != '*' && gcodeBuffer[gcodePointer])
-			{
-				gcodeBuffer[gp2] = gcodeBuffer[gcodePointer++];
-				gp2++;
-			}
-			gcodeBuffer[gp2] = 0;
-		}
-		else if (checksumRequired)
-		{
-			gcodeBuffer[0] = 0;
-			Init();
-			return false;
-		}
-
-		Init();
-		state = GCodeState::executing;
-		return true;
-	}
-	else if (!inComment || writingFileDirectory)
-	{
-		gcodeBuffer[gcodePointer++] = c;
-		if (gcodePointer >= (int)GCODE_LENGTH)
-		{
-			platform->Message(GENERIC_MESSAGE, "Error: G-Code buffer length overflow.\n");
-			gcodePointer = 0;
-			gcodeBuffer[0] = 0;
-		}
-	}
-
-	return false;
-}
-
-bool GCodeBuffer::Put(const char *str, size_t len)
-{
-	for(size_t i=0; i<=len; i++)
-	{
-		if (Put(str[i]))
-		{
-			return true;
-		}
-	}
-
-	return false;
-}
-
-// Does this buffer contain any code?
-
-bool GCodeBuffer::IsEmpty() const
-{
-	const char *buf = gcodeBuffer;
-	while (*buf && strchr(" \t\n\r", *buf))
-	{
-		buf++;
-	}
-	return *buf == 0;
-}
-
-// Is 'c' in the G Code string?
-// Leave the pointer there for a subsequent read.
-
-bool GCodeBuffer::Seen(char c)
-{
-	readPointer = 0;
-	for(;;)
-	{
-		char b = gcodeBuffer[readPointer];
-		if (b == 0 || b == ';') break;
-		if (b == c) return true;
-		++readPointer;
-	}
-	readPointer = -1;
-	return false;
-}
-
-// Get a float after a G Code letter found by a call to Seen()
-
-float GCodeBuffer::GetFValue()
-{
-	if (readPointer < 0)
-	{
-		platform->Message(GENERIC_MESSAGE, "Error: GCodes: Attempt to read a GCode float before a search.\n");
-		readPointer = -1;
-		return 0.0;
-	}
-	float result = (float) strtod(&gcodeBuffer[readPointer + 1], 0);
-	readPointer = -1;
-	return result;
-}
-
-// Get a :-separated list of floats after a key letter
-
-const void GCodeBuffer::GetFloatArray(float a[], size_t& returnedLength)
-{
-	size_t length = 0;
-	if (readPointer < 0)
-	{
-		platform->Message(GENERIC_MESSAGE, "Error: GCodes: Attempt to read a GCode float array before a search.\n");
-		readPointer = -1;
-		returnedLength = 0;
-		return;
-	}
-
-	bool inList = true;
-	while (inList)
-	{
-		if (length >= returnedLength) // Array limit has been set in here
-		{
-			platform->MessageF(GENERIC_MESSAGE, "Error: GCodes: Attempt to read a GCode float array that is too long: %s\n", gcodeBuffer);
-			readPointer = -1;
-			returnedLength = 0;
-			return;
-		}
-		a[length] = (float)strtod(&gcodeBuffer[readPointer + 1], 0);
-		length++;
-		readPointer++;
-		while (gcodeBuffer[readPointer] && (gcodeBuffer[readPointer] != ' ') && (gcodeBuffer[readPointer] != LIST_SEPARATOR))
-		{
-			readPointer++;
-		}
-		if (gcodeBuffer[readPointer] != LIST_SEPARATOR)
-		{
-			inList = false;
-		}
-	}
-
-	// Special case if there is one entry and returnedLength requests several.
-	// Fill the array with the first entry.
-
-	if (length == 1 && returnedLength > 1)
-	{
-		for(size_t i = 1; i < returnedLength; i++)
-		{
-			a[i] = a[0];
-		}
-	}
-	else
-	{
-		returnedLength = length;
-	}
-
-	readPointer = -1;
-}
-
-// Get a :-separated list of longs after a key letter
-
-const void GCodeBuffer::GetLongArray(long l[], size_t& returnedLength)
-{
-	size_t length = 0;
-	if (readPointer < 0)
-	{
-		platform->Message(GENERIC_MESSAGE, "Error: GCodes: Attempt to read a GCode long array before a search.\n");
-		readPointer = -1;
-		return;
-	}
-
-	bool inList = true;
-	while (inList)
-	{
-		if (length >= returnedLength) // Array limit has been set in here
-		{
-			platform->MessageF(GENERIC_MESSAGE, "Error: GCodes: Attempt to read a GCode long array that is too long: %s\n", gcodeBuffer);
-			readPointer = -1;
-			returnedLength = 0;
-			return;
-		}
-		l[length] = strtol(&gcodeBuffer[readPointer + 1], 0, 0);
-		length++;
-		readPointer++;
-		while (gcodeBuffer[readPointer] && (gcodeBuffer[readPointer] != ' ') && (gcodeBuffer[readPointer] != LIST_SEPARATOR))
-		{
-			readPointer++;
-		}
-		if (gcodeBuffer[readPointer] != LIST_SEPARATOR)
-		{
-			inList = false;
-		}
-	}
-	returnedLength = length;
-	readPointer = -1;
-}
-
-// Get a string after a G Code letter found by a call to Seen().
-// It will be the whole of the rest of the GCode string, so strings
-// should always be the last parameter.
-
-const char* GCodeBuffer::GetString()
-{
-	if (readPointer < 0)
-	{
-		platform->Message(GENERIC_MESSAGE, "Error: GCodes: Attempt to read a GCode string before a search.\n");
-		readPointer = -1;
-		return "";
-	}
-	const char* result = &gcodeBuffer[readPointer + 1];
-	readPointer = -1;
-	return result;
-}
-
-// This returns a pointer to the end of the buffer where a
-// string starts.  It assumes that an M or G search has
-// been done followed by a GetIValue(), so readPointer will
-// be -1.  It absorbs "M/Gnnn " (including the space) from the
-// start and returns a pointer to the next location.
-
-// This is provided for legacy use, in particular in the M23
-// command that sets the name of a file to be printed.  In
-// preference use GetString() which requires the string to have
-// been preceded by a tag letter.
-
-const char* GCodeBuffer::GetUnprecedentedString(bool optional)
-{
-	readPointer = 0;
-	while (gcodeBuffer[readPointer] && gcodeBuffer[readPointer] != ' ')
-	{
-		readPointer++;
-	}
-
-	if (!gcodeBuffer[readPointer])
-	{
-		readPointer = -1;
-		if (optional)
-		{
-			return nullptr;
-		}
-		platform->Message(GENERIC_MESSAGE, "Error: GCodes: String expected but not seen.\n");
-		return gcodeBuffer; // Good idea?
-	}
-
-	const char* result = &gcodeBuffer[readPointer + 1];
-	readPointer = -1;
-	return result;
-}
-
-// Get an long after a G Code letter
-
-long GCodeBuffer::GetLValue()
-{
-	if (readPointer < 0)
-	{
-		platform->Message(GENERIC_MESSAGE, "Error: GCodes: Attempt to read a GCode int before a search.\n");
-		readPointer = -1;
-		return 0;
-	}
-	long result = strtol(&gcodeBuffer[readPointer + 1], 0, 0);
-	readPointer = -1;
-	return result;
 }
 
 // vim: ts=4:sw=4

@@ -24,8 +24,8 @@ Licence: GPL
 #define CONFIGURATION_H
 
 #define NAME "RepRapFirmware"
-#define VERSION "1.09r-ch"
-#define DATE "2016-01-16"
+#define VERSION "1.09s-ch"
+#define DATE "2016-02-25"
 
 #define AUTHORS "reprappro, dc42, chrishamm, t3p3, dnewman"
 
@@ -146,6 +146,9 @@ const float FILAMENT_WIDTH = 1.75;						// Millimetres
 #define SLEEP_G "sleep.g"
 
 #define EOF_STRING "<!-- **EoF** -->"
+
+#define IAP_UPDATE_FILE "iap.bin"
+#define IAP_FIRMWARE_FILE "RepRapFirmware.bin"
 
 // List defaults
 

@@ -10,12 +10,12 @@ ARDUINO_VERSION := 1.6.7
 GCC_VERSION := 4.8.3-2014q1
 BOSSAC_VERSION := 1.3a-arduino
 
-DUET_BOARD_VERSION := 1.0.7
+DUET_BOARD_VERSION := 1.0.8
 
 # Workspace paths
-LIBRARY_PATH := $(PWD)/Libraries
+LIBRARY_PATH = $(PWD)/Libraries
 BUILD_PATH := $(PWD)/Release/obj
-OUTPUT_DIR := $(PWD)/Release
+OUTPUT_PATH := $(PWD)/Release
 
 # Compiler options
 OPTIMIZATION := -O3
@@ -43,6 +43,12 @@ ifeq (,$(wildcard $(DUET_BOARD_PATH)/.))
   $(error Duet board not found! Install it first via Arduino''s Boards Manager.)
 endif
 
+# Detect library path
+DUET_LIBRARY_PATH := $(DUET_BOARD_PATH)/libraries
+ifeq (,$(wildcard $(DUET_LIBRARY_PATH)/.))
+  $(error Duet libraries not found! Are you using Duet board v1.0.8 or newer?)
+endif
+
 # Detect GCC path
 GCC_PATH := $(ARDUINO_PATH)/packages/arduino/tools/arm-none-eabi-gcc/$(GCC_VERSION)
 ifeq (,$(wildcard $(GCC_PATH)/.))
@@ -64,7 +70,8 @@ CXX := $(GCC_PATH)/bin/$(CROSS_COMPILE)g++
 LD := $(GCC_PATH)/bin/$(CROSS_COMPILE)gcc
 OBJCOPY := $(GCC_PATH)/bin/$(CROSS_COMPILE)objcopy
 
-INCLUDES := $(PWD)/Libraries/Flash $(PWD)/Libraries/EMAC $(PWD)/Libraries/Lwip $(PWD)/Libraries/MAX31855 $(PWD)/Libraries/MCP4461 $(PWD)/Libraries/SD_HSMCI $(PWD)/Libraries/SD_HSMCI/utility $(PWD)/Libraries/SPI $(PWD)/Libraries/Wire
+INCLUDES := $(DUET_LIBRARY_PATH)/Flash $(DUET_LIBRARY_PATH)/EMAC $(DUET_LIBRARY_PATH)/Lwip $(DUET_LIBRARY_PATH)/SD_HSMCI $(DUET_LIBRARY_PATH)/SD_HSMCI/utility $(DUET_LIBRARY_PATH)/SPI $(DUET_LIBRARY_PATH)/Wire
+INCLUDES += $(LIBRARY_PATH)/MAX31855 $(LIBRARY_PATH)/MCP4461
 INCLUDES += $(DUET_BOARD_PATH)/cores/arduino $(DUET_BOARD_PATH)/variants/duet
 INCLUDES += $(DUET_BOARD_PATH)/system/libsam $(DUET_BOARD_PATH)/system/libsam/include $(DUET_BOARD_PATH)/system/CMSIS/CMSIS/Include $(DUET_BOARD_PATH)/system/CMSIS/Device/ATMEL
 
@@ -76,11 +83,13 @@ DEVICE_FLAGS = -mcpu=cortex-m3 -DF_CPU=84000000L -DARDUINO=$(subst .,,$(ARDUINO_
 CFLAGS += $(foreach dir,$(INCLUDES),-I$(dir))
 CPPFLAGS += $(foreach dir,$(INCLUDES),-I$(dir))
 
-LDFLAGS += $(OPTIMIZATION) -Wl,--gc-sections -mcpu=cortex-m3 "-T$(DUET_BOARD_PATH)/variants/duet/linker_scripts/gcc/flash.ld" "-Wl,-Map,$(OUTPUT_DIR)/RepRapFirmware.map" "-L$(BUILD_PATH)" -mthumb -Wl,--cref -Wl,--check-sections -Wl,--gc-sections -Wl,--entry=Reset_Handler -Wl,--unresolved-symbols=report-all -Wl,--warn-common -Wl,--warn-section-align -Wl,--warn-unresolved-symbols -Wl,--start-group $(BUILD_PATH)/*.o "$(DUET_BOARD_PATH)/variants/duet/libsam_sam3x8e_gcc_rel.a" -lm -lgcc -Wl,--end-group
+LDFLAGS += $(OPTIMIZATION) -Wl,--gc-sections -mcpu=cortex-m3 "-T$(DUET_BOARD_PATH)/variants/duet/linker_scripts/gcc/flash.ld" "-Wl,-Map,$(OUTPUT_PATH)/RepRapFirmware.map" "-L$(BUILD_PATH)" -mthumb -Wl,--cref -Wl,--check-sections -Wl,--gc-sections -Wl,--entry=Reset_Handler -Wl,--unresolved-symbols=report-all -Wl,--warn-common -Wl,--warn-section-align -Wl,--warn-unresolved-symbols -Wl,--start-group $(BUILD_PATH)/*.o "$(DUET_BOARD_PATH)/variants/duet/libsam_sam3x8e_gcc_rel.a" -lm -lgcc -Wl,--end-group
 
 # Unfortunately make doesn't support directory wildcards in targets, so instead we must explicitly specify the source paths by using VPATH
 VPATH := $(DUET_BOARD_PATH)/cores/arduino $(DUET_BOARD_PATH)/cores/arduino/USB $(DUET_BOARD_PATH)/variants/duet
-VPATH += $(PWD)/Libraries/EMAC $(PWD)/Libraries/Flash $(PWD)/Libraries/Lwip/contrib/apps/netbios $(PWD)/Libraries/Lwip/lwip/src/api $(PWD)/Libraries/Lwip/lwip/src/core $(PWD)/Libraries/Lwip/lwip/src/core/ipv4 $(PWD)/Libraries/Lwip/lwip/src/netif $(PWD)/Libraries/Lwip/lwip/src/sam/netif $(PWD)/Libraries/MAX31855 $(PWD)/Libraries/MCP4461 $(PWD)/Libraries/SD_HSMCI/utility $(PWD)/Libraries/SPI $(PWD)/Libraries/Wire
+VPATH += $(DUET_LIBRARY_PATH)/EMAC $(DUET_LIBRARY_PATH)/Lwip/lwip/src/api $(DUET_LIBRARY_PATH)/Lwip/lwip/src/core $(DUET_LIBRARY_PATH)/Lwip/lwip/src/core/ipv4 $(DUET_LIBRARY_PATH)/Lwip/lwip/src/netif $(DUET_LIBRARY_PATH)/Lwip/lwip/src/sam/netif $(DUET_LIBRARY_PATH)/Lwip/contrib/apps/mdns $(DUET_LIBRARY_PATH)/Lwip/contrib/apps/netbios
+VPATH += $(DUET_LIBRARY_PATH)/Flash $(DUET_LIBRARY_PATH)/SD_HSMCI/utility $(DUET_LIBRARY_PATH)/SPI $(DUET_LIBRARY_PATH)/Wire
+VPATH += $(LIBRARY_PATH)/MAX31855 $(LIBRARY_PATH)/MCP4461
 
 C_SOURCES += $(foreach dir,$(VPATH),$(wildcard $(dir)/*.c)) $(wildcard $(PWD)/*.c)
 CPP_SOURCES := $(foreach dir,$(VPATH),$(wildcard $(dir)/*.cpp)) $(wildcard $(PWD)/*.cpp)
@@ -93,14 +102,14 @@ DEPS := $(C_OBJS:%.o=%.d) $(CPP_OBJS:%.o=%.d)
 
 # ================================= Target all ======================================
 .PHONY += all
-all: $(OUTPUT_DIR)/RepRapFirmware.bin
-$(OUTPUT_DIR)/RepRapFirmware.bin: $(OUTPUT_DIR)/RepRapFirmware.elf
+all: $(OUTPUT_PATH)/RepRapFirmware.bin
+$(OUTPUT_PATH)/RepRapFirmware.bin: $(OUTPUT_PATH)/RepRapFirmware.elf
 	@echo "  BIN     RepRapFirmware.bin"
-	@$(OBJCOPY) -O binary $(OUTPUT_DIR)/RepRapFirmware.elf $(OUTPUT_DIR)/RepRapFirmware.bin
+	@$(OBJCOPY) -O binary $(OUTPUT_PATH)/RepRapFirmware.elf $(OUTPUT_PATH)/RepRapFirmware.bin
 
-$(OUTPUT_DIR)/RepRapFirmware.elf: $(BUILD_PATH) $(OUTPUT_DIR) $(C_OBJS) $(CPP_OBJS)
+$(OUTPUT_PATH)/RepRapFirmware.elf: $(BUILD_PATH) $(OUTPUT_PATH) $(C_OBJS) $(CPP_OBJS)
 	@echo "  LD      RepRapFirmware.elf"
-	@$(LD) $(LDFLAGS) -o $(OUTPUT_DIR)/RepRapFirmware.elf
+	@$(LD) $(LDFLAGS) -o $(OUTPUT_PATH)/RepRapFirmware.elf
 -include $(DEPS)
 
 $(BUILD_PATH)/%.c.o: %.c
@@ -114,23 +123,23 @@ $(BUILD_PATH)/%.cpp.o: %.cpp
 $(BUILD_PATH):
 	@mkdir -p $(BUILD_PATH)
 
-$(OUTPUT_DIR):
-	@mkdir -p $(OUTPUT_DIR)
+$(OUTPUT_PATH):
+	@mkdir -p $(OUTPUT_PATH)
 
 
 # ================================= Target clean ====================================
 .PHONY += clean
 clean:
-	@rm -rf $(BUILD_PATH) $(OUTPUT_DIR)
+	@rm -rf $(BUILD_PATH) $(OUTPUT_PATH)
 	@rm -f $(PWD)/*.d
 	$(info Build directories removed.)
 
 
 # ================================= Target upload ===================================
 .PHONY += upload
-upload: $(OUTPUT_DIR)/RepRapFirmware.bin
+upload: $(OUTPUT_PATH)/RepRapFirmware.bin
 	@echo "=> Rebooting hardware into bootloader mode..."
 	@stty -F $(DUET_PORT) 1200 -ixon -crtscts || true
 	@sleep 1
 	@echo "=> Flashing new firmware binary..."
-	@$(BOSSAC_PATH) -u -e -w -b $(OUTPUT_DIR)/RepRapFirmware.bin -R
+	@$(BOSSAC_PATH) -u -e -w -b $(OUTPUT_PATH)/RepRapFirmware.bin -R

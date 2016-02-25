@@ -1,12 +1,12 @@
 
-# Arduino 1.6.5 hardware tree for the RepRap Duet platform.
+# Arduino 1.6.7 hardware tree for the RepRap Duet platform.
 # ------------------------------
 #
 # For more info:
 # https://github.com/arduino/Arduino/wiki/Arduino-IDE-1.5---3rd-party-Hardware-specification
 
 name=Duet platform
-version=1.0.7
+version=1.0.8
 
 # SAM3 compile variables
 # ----------------------
@@ -48,7 +48,7 @@ compiler.ar.extra_flags=
 compiler.elf2hex.extra_flags=
 
 
-compiler.libsam.c.flags="-I{build.system.path}/libsam" "-I{build.system.path}/CMSIS/CMSIS/Include/" "-I{build.system.path}/CMSIS/Device/ATMEL/"
+compiler.libsam.c.flags="-I{build.system.path}/libsam" "-I{build.system.path}/libsam/include" "-I{build.system.path}/CMSIS/CMSIS/Include/" "-I{build.system.path}/CMSIS/Device/ATMEL/"
 
 # USB Flags
 # ---------

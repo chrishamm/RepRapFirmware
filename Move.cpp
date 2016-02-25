@@ -1280,6 +1280,29 @@ void Move::GetCurrentMachinePosition(float m[DRIVES + 1], bool disableMotorMappi
 	return ((float)(endpoint))/reprap.GetPlatform()->DriveStepsPerUnit(drive);
 }
 
+// Is filament being extruded?
+bool Move::IsExtruding() const
+{
+	cpu_irq_disable();
+	if (NoLiveMovement())
+	{
+		cpu_irq_enable();
+		return false;
+	}
+
+	for(size_t i = 0; i < DRIVES - AXES; i++)
+	{
+		if (currentDda->GetRawExtruderDistance(i) > 0.0)
+		{
+			cpu_irq_enable();
+			return true;
+		}
+	}
+
+	cpu_irq_enable();
+	return false;
+}
+
 // Return the transformed machine coordinates
 void Move::GetCurrentUserPosition(float m[DRIVES + 1], uint8_t moveType) const
 {

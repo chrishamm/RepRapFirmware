@@ -159,7 +159,7 @@ Spin() function more than once from RepRap.Spin().
 
 Compiling from Source
 
-Although the firmware was originally developed using Eclipse Juno, the latest version of the Arduino toolkit (1.6.4) breaks compatibility
+Although the firmware was originally developed using Eclipse Juno, the latest versions of the Arduino toolkit (1.6.4+) break compatibility
 with the Arduino Eclipse Plugin. Hence a Makefile has been introduced to compile the firmware easily on OS X and Linux. For Windows there
 is also a Windows PowerShell script available.
 
@@ -206,27 +206,24 @@ The major changes are:
 - FAN0 line is driven at 25kHz and pin 25 on the expansion header (Duet) can utilise the tacho line of 4-pin PWM fans
 
 -------------
-Note on zpl fork of this firmware:
+Note on chrishamm fork of this firmware:
 
-Based on dc42's long-time proven Duet firmware fork, I have implemented a couple more features and (partially) merged in features from RepRapPro's development firmware branch.
-The most significant changes are:
+Based on dc42's long-time proven Duet firmware fork, I have implemented a couple more features and (partially) merged in features from RepRapPro's
+development firmware branch. The most significant changes are:
 
 - FTP and Telnet support
 - Reliable low-level networking and implementation of the internal EMAC ISR
-- Internal G-Code queuing to execute non-movement codes just-in-time and not ~20 moves too early (due to the look-ahead)
-- M25: SD-card prints are paused as soon as the current move finishes
-- M0 does no longer disable any stepper motors or heaters if the print is paused. This shall simplify print restarts (requires my web interface fork)
-- Implemented cold retracts, minimum temperature is 90C
-- Flash usage is optional; only one line needs to be commented out to disable it
-
-See the "Changes in ... fork" text files for complete lists of all the changes dc42 and zpl have contributed.
+- Support for Duet Web Control and POST uploads
+- Internal G-Code queuing to execute non-movement codes just-in-time and not ~10 moves too early (due to the look-ahead)
+- Support for G-code interleaving (multiple G-codes from different sources can be run at once)
+- Development and maintenance of an individual Arduino device board (see Hardware directory)
 
 -------------
 
 Version 1.09
 
 Started: 2012-11-18
-This README dated: 2015-10-14
+This README dated: 2016-02-19
 
 Adrian Bowyer
 RepRap Professional Ltd

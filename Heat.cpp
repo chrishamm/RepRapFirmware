@@ -24,7 +24,7 @@ const float invHeatPwmAverageCount = HEAT_SAMPLE_TIME/HEAT_PWM_AVERAGE_TIME;
 
 Heat::Heat(Platform* p) : platform(p), active(false), coldExtrude(false), bedHeater(BED_HEATER), chamberHeater(-1)
 {
-	for(size_t heater=0; heater < HEATERS; heater++)
+	for(size_t heater = 0; heater < HEATERS; heater++)
 	{
 		pids[heater] = new PID(platform, heater);
 	}
@@ -32,7 +32,7 @@ Heat::Heat(Platform* p) : platform(p), active(false), coldExtrude(false), bedHea
 
 void Heat::Init()
 {
-	for(size_t heater=0; heater < HEATERS; heater++)
+	for(size_t heater = 0; heater < HEATERS; heater++)
 	{
 		pids[heater]->Init();
 	}
@@ -43,7 +43,7 @@ void Heat::Init()
 
 void Heat::Exit()
 {
-	for(size_t heater=0; heater < HEATERS; heater++)
+	for(size_t heater = 0; heater < HEATERS; heater++)
 	{
 		pids[heater]->SwitchOff();
 	}
@@ -84,6 +84,21 @@ void Heat::Diagnostics()
 			platform->MessageF(GENERIC_MESSAGE, "Heater %d: I-accumulator = %.1f\n", heater, pids[heater]->temp_iState);
 		}
 	}
+}
+
+bool Heat::AnyHeaterActive() const
+{
+	size_t firstHeater = (bedHeater == -1) ? E0_HEATER : min<int8_t>(bedHeater, E0_HEATER);
+	for(size_t heater = firstHeater; heater < HEATERS; heater++)
+	{
+		const PID *pid = pids[heater];
+		float target = (pid->Active()) ? GetActiveTemperature(heater) : GetStandbyTemperature(heater);
+		if (!pid->SwitchedOff() && !pid->FaultOccurred() && target >= TEMPERATURE_LOW_SO_DONT_CARE)
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 bool Heat::AllHeatersAtSetTemperatures(bool includingBed) const
@@ -139,7 +154,7 @@ void PID::Init()
 	// Time the sensor was last sampled.  During startup, we use the current
 	// time as the initial value so as to not trigger an immediate warning from
 	// the Tick ISR.
-	lastSampleTime = platform->Time();
+	lastSampleTime = millis();
 }
 
 void PID::SwitchOn()
@@ -164,7 +179,7 @@ void PID::Spin()
 	// runs the risk of having undesirable delays between calls.  To guard against this,
 	// we record for each PID object when it was last sampled and have the Tick ISR
 	// take action if there is a significant delay since the time of last sampling.
-	lastSampleTime = platform->Time();
+	lastSampleTime = millis();
 
 	// Always know our temperature, regardless of whether we have been switched on or not
 

@@ -217,10 +217,10 @@ uint32_t USBD_Send(uint32_t ep, const void* d, uint32_t len)
 	return r;
 }
 
-int _cmark;
-int _cend;
+uint16_t _cmark;
+uint16_t _cend;
 
-void USBD_InitControl(int end)
+void USBD_InitControl(uint16_t end)
 {
 	_cmark = 0;
 	_cend = end;
@@ -300,7 +300,7 @@ bool USBD_ClassInterfaceRequest(USBSetup& setup)
 	return false;
 }
 
-int USBD_SendInterfaces(void)
+uint8_t USBD_SendInterfaces(void)
 {
 	uint8_t interfaces = 0;
 
@@ -340,12 +340,13 @@ static bool USBD_SendConfiguration(int maxlen)
 	//	Count and measure interfaces
 	USBD_InitControl(0);
 	//TRACE_CORE(printf("=> USBD_SendConfiguration _cmark1=%d\r\n", _cmark);)
-	int interfaces = USBD_SendInterfaces();
+	uint8_t interfaces = USBD_SendInterfaces();
 	//TRACE_CORE(printf("=> USBD_SendConfiguration _cmark2=%d\r\n", _cmark);)
 	//TRACE_CORE(printf("=> USBD_SendConfiguration sizeof=%d\r\n", sizeof(ConfigDescriptor));)
 
+	uint16_t clen = _cmark + (uint16_t)(sizeof(ConfigDescriptor));
 _Pragma("pack(1)")
-	ConfigDescriptor config = D_CONFIG(_cmark + sizeof(ConfigDescriptor),interfaces);
+	ConfigDescriptor config = D_CONFIG(clen, interfaces);
 _Pragma("pack()")
 	//TRACE_CORE(printf("=> USBD_SendConfiguration clen=%d\r\n", config.clen);)
 
@@ -363,12 +364,13 @@ static bool USBD_SendOtherConfiguration(int maxlen)
 	//	Count and measure interfaces
 	USBD_InitControl(0);
 	//TRACE_CORE(printf("=> USBD_SendConfiguration _cmark1=%d\r\n", _cmark);)
-	int interfaces = USBD_SendOtherInterfaces();
+	uint8_t interfaces = USBD_SendOtherInterfaces();
 	//TRACE_CORE(printf("=> USBD_SendConfiguration _cmark2=%d\r\n", _cmark);)
 	//TRACE_CORE(printf("=> USBD_SendConfiguration sizeof=%d\r\n", sizeof(ConfigDescriptor));)
 
+	uint16_t clen = _cmark + (uint16_t)(sizeof(ConfigDescriptor));
 _Pragma("pack(1)")
-	ConfigDescriptor config = D_OTHERCONFIG(_cmark + sizeof(ConfigDescriptor),interfaces);
+	ConfigDescriptor config = D_OTHERCONFIG(clen, interfaces);
 _Pragma("pack()")
 	//TRACE_CORE(printf("=> USBD_SendConfiguration clen=%d\r\n", config.clen);)
 

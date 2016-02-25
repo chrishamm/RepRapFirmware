@@ -22,6 +22,8 @@ Licence: GPL
 #ifndef GCODES_H
 #define GCODES_H
 
+#include "GCodeBuffer.h"
+
 const size_t STACK = 5;								// Maximum depth of the stack
 
 const char AXIS_LETTERS[AXES] = { 'X', 'Y', 'Z' };	// Axes in a G-Code
@@ -31,51 +33,6 @@ const char EXTRUDE_LETTER = 'E';					// G-Code extrude
 typedef uint16_t EndstopChecks;						// Must be large enough to hold a bitmap of drive numbers
 const EndstopChecks ZProbeActive = 1 << 15;			// Must be distinct from 1 << (any drive number)
 
-
-// Small class to hold an individual GCode and provide functions to allow it to be parsed
-
-class GCodeBuffer
-{
-	public:
-		GCodeBuffer(Platform* p, const char* id);
-		//const char *Identity() const { return identity; }
-		void Init(); 											// Set it up
-		void Clear() { SetFinished(true); }						// Clean it up
-		bool Put(char c);										// Add a character to the end
-		bool Put(const char *str, size_t len);					// Add an entire string
-		bool IsEmpty() const;									// Does this buffer contain any code?
-		bool Seen(char c);										// Is a character present?
-		float GetFValue();										// Get a float after a key letter
-		int GetIValue();										// Get an integer after a key letter
-		long GetLValue();										// Get a long integer after a key letter
-		const char* GetUnprecedentedString(bool optional = false);	// Get a string with no preceding key letter
-		const char* GetString();								// Get a string after a key letter
-		const void GetFloatArray(float a[], size_t& length);	// Get a :-separated list of floats after a key letter
-		const void GetLongArray(long l[], size_t& length);		// Get a :-separated list of longs after a key letter
-		const char* Buffer() const;								// What G-Code has been fed into this buffer?
-		bool Active() const;									// Is this G-Code buffer still being acted upon?
-		void SetFinished(bool f);								// Set the G Code executed (or not)
-		const char* WritingFileDirectory() const;				// If we are writing the G Code to a file, where that file is
-		void SetWritingFileDirectory(const char* wfd);			// Set the directory for the file to write the GCode in
-		int GetToolNumberAdjust() const { return toolNumberAdjust; }
-		void SetToolNumberAdjust(int arg) { toolNumberAdjust = arg; }
-		void SetCommsProperties(uint32_t arg) { checksumRequired = (arg & 1); }
-
-	private:
-
-		enum class GCodeState { idle, executing };
-		int CheckSum();											// Compute the checksum (if any) at the end of the G Code
-		Platform* platform;										// Pointer to the RepRap's controlling class
-		char gcodeBuffer[GCODE_LENGTH];							// The G Code
-		const char* identity;									// Where we are from (web, file, serial line etc)
-		int gcodePointer;										// Index in the buffer
-		int readPointer;										// Where in the buffer to read next
-		bool inComment;											// Are we after a ';' character?
-		bool checksumRequired;									// True if we only accept commands with a valid checksum
-		GCodeState state;										// State of this GCodeBuffer
-		const char* writingFileDirectory;						// If the G Code is going into a file, where that is
-		int toolNumberAdjust;									// Internal offset for tool numbers
-};
 
 //****************************************************************************************************
 
@@ -92,16 +49,13 @@ class CodeQueueItem
 
 		CodeQueueItem(CodeQueueItem *n);
 		void Init(GCodeBuffer *gb, unsigned int executeAtMove);
-		void SetNext(CodeQueueItem *n);
-		CodeQueueItem *Next() const;
+		void SetNext(CodeQueueItem *n) { next = n; }
+		CodeQueueItem *Next() const { return next; }
 
-		unsigned int ExecuteAtMove() const;
-		const char *GetCode() const;
-		size_t GetCodeLength() const;
-		GCodeBuffer *GetSource() const;
-
-		void Execute();
-		bool IsExecuting() const;
+		unsigned int ExecuteAtMove() const { return moveToExecute; }
+		const char *GetCode() const { return code; }
+		size_t GetCodeLength() const { return codeLength; }
+		GCodeBuffer *GetSource() const { return source; }
 
 	private:
 
@@ -111,17 +65,15 @@ class CodeQueueItem
 
 		GCodeBuffer *source;
 		CodeQueueItem *next;
-		bool executing;
 };
 
 //****************************************************************************************************
 
 // The GCode interpreter
 
-enum class PrintStatus
+enum class PauseStatus
 {
 	NotPaused,
-	WaitingForMacro,
 	Pausing,
 	Paused,
 	Resuming
@@ -222,7 +174,7 @@ class GCodes
 		GCodeBuffer* serialGCode;									// ...
 		GCodeBuffer* auxGCode;										// ...
 		GCodeBuffer* fileMacroGCode;								// ...
-		GCodeBuffer* queuedGCode;									// ... of G Codes
+		GCodeBuffer* queueGCode;									// ... of G Codes
 		bool moveAvailable;											// Have we seen a move G Code and set it up?
 		float moveBuffer[DRIVES+1]; 								// Move coordinates; last is feed rate
 		float savedMoveBuffer[DRIVES+1];							// The position and feedrate when we started the current simulation
@@ -235,9 +187,9 @@ class GCodes
 		bool axesRelativeStack[STACK];								// For dealing with Push and Pop
 		float feedrateStack[STACK];									// For dealing with Push and Pop
 		float extruderPositionStack[STACK][DRIVES-AXES];			// For dealing with Push and Pop
-		FileData fileStack[STACK];
+		FileData fileStack[STACK];									// For dealing with Push and Pop
 		bool doingFileMacroStack[STACK];							// For dealing with Push and Pop
-		uint8_t stackPointer;										// Push and Pop stack pointer
+		uint8_t stackPointer, fileStackPointer;						// Push and Pop stack pointer (one global and one for files and macros to suspend them on demand)
 		FilePosition lastMacroPosition;								// Where did the last macro G-code start?
 		char axisLetters[AXES]; 									// 'X', 'Y', 'Z'
 		float axisScaleFactors[AXES];								// Scale XYZ coordinates by this factor (for Delta configurations)
@@ -251,8 +203,8 @@ class GCodes
 		FileData fileToPrint;
 		FileStore* fileBeingWritten;								// A file to write G Codes (or sometimes HTML) in
 		bool doingFileMacro, returningFromMacro;					// Are we executing a macro file or are we returning from it?
-		const GCodeBuffer *macroSourceGCode;						// Which GCodeBuffer is running the macro(s)?
-		PrintStatus printStatus;									// What is the state of the current file print?
+		const GCodeBuffer *macroSourceGCodeBuffer;					// Which GCodeBuffer is running the macro(s)?
+		PauseStatus pauseStatus;									// What is the pause state of the current file print?
 		bool doPauseMacro;											// Do we need to run pause.g and resume.g?
 		float fractionOfFilePrinted;								// Only used to record the main file when a macro is being printed
 		uint8_t eofStringCounter;									// Check the EoF string as we read.
@@ -268,12 +220,13 @@ class GCodes
 		float longWait;												// Timer for things that happen occasionally (seconds)
 		bool limitAxes;												// Don't think outside the box.
 		bool axisIsHomed[AXES];										// These record which of the axes have been homed
-		bool waitingForMoveToComplete;
+		GCodeBuffer *waitingForMoveGCodeBuffer;						// Which GCodeBuffer is waiting for all moves to stop?
 		float pausedFanValues[NUM_FANS];
 		float lastProbedZ;											// The last height at which the Z probe stopped
 		int8_t toolChangeSequence;									// Steps through the tool change procedure
-		CodeQueueItem *internalCodeQueue;							// Linked list of all the queued codes
+		CodeQueueItem *internalCodeQueue;							// Linked list of all queued G-Codes
 		CodeQueueItem *releasedQueueItems;							// Linked list of all released queue items
+		GCodeBuffer *queueGCodeSource;								// Pointer to the source of a queued G-Code
 		unsigned int totalMoves;									// Total number of moves that have been fed into the look-ahead
 		volatile unsigned int movesCompleted;						// Number of moves that have been completed (changed by ISR)
 
@@ -285,48 +238,6 @@ class GCodes
 		FilePosition filePos;										// The position we got up to in the file being printed
 		FilePosition moveFilePos;									// Saved version of filePos for the next real move to be processed
 };
-
-//*****************************************************************************************************
-
-// Get an Int after a G Code letter
-
-inline int GCodeBuffer::GetIValue()
-{
-	return static_cast<int>(GetLValue());
-}
-
-inline const char* GCodeBuffer::Buffer() const
-{
-	return gcodeBuffer;
-}
-
-inline bool GCodeBuffer::Active() const
-{
-	return (state == GCodeState::executing);
-}
-
-inline void GCodeBuffer::SetFinished(bool f)
-{
-	if (f)
-	{
-		state = GCodeState::idle;
-		gcodeBuffer[0] = 0;
-	}
-	else
-	{
-		state = GCodeState::executing;
-	}
-}
-
-inline const char* GCodeBuffer::WritingFileDirectory() const
-{
-	return writingFileDirectory;
-}
-
-inline void GCodeBuffer::SetWritingFileDirectory(const char* wfd)
-{
-	writingFileDirectory = wfd;
-}
 
 //*****************************************************************************************************
 
@@ -343,7 +254,7 @@ inline bool GCodes::CanStartMacro(const GCodeBuffer *gb) const
 
 	// Regular GCodeBuffers may do this only if no macro file is being run,
 	// or if they're the source of the currently executing macro file.
-	if (!DoingFileMacro() || gb == macroSourceGCode)
+	if (!DoingFileMacro() || gb == macroSourceGCodeBuffer)
 		return true;
 
 	return false;

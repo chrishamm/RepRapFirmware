@@ -69,15 +69,10 @@ extern "C" {
  *
  * @{
  */
-#if 1	// dc42 change for Duet
-#define EMAC_RX_BUFFERS (32)
-#define EMAC_TX_BUFFERS (8)
-#else
-#define EMAC_RX_BUFFERS 16
-#define EMAC_TX_BUFFERS 8
-#endif
+#define EMAC_RX_BUFFERS 	32
+#define EMAC_TX_BUFFERS 	8
 
-#define MAC_PHY_RETRY_MAX                             1000000
+#define MAC_PHY_RETRY_MAX	1000000
 
 
 /** TX descriptor lists */
@@ -693,7 +688,7 @@ void emac_handler(emac_device_t* p_emac_dev)
 	Emac *p_hw = p_emac_dev->p_hw;
 
 	emac_tx_descriptor_t *p_tx_td;
-	emac_dev_tx_cb_t *p_tx_cb;
+	emac_dev_tx_cb_t *p_tx_cb = NULL;
 	volatile uint32_t ul_isr;
 	volatile uint32_t ul_rsr;
 	volatile uint32_t ul_tsr;
@@ -780,7 +775,7 @@ void emac_handler(emac_device_t* p_emac_dev)
 
 		if (ul_tsr & EMAC_TSR_RLES) {
 			/* Notify upper layer RLE */
-			if (*p_tx_cb) {
+			if (p_tx_cb != NULL) {
 				(*p_tx_cb) (ul_tx_status_flag);
 			}
 		}

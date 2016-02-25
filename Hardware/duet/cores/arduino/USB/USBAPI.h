@@ -107,10 +107,10 @@ bool	CDC_Setup(USBSetup& setup);
 #define TRANSFER_RELEASE	0x40
 #define TRANSFER_ZERO		0x20
 
-void USBD_InitControl(int end);
+void USBD_InitControl(uint16_t end);
 int USBD_SendControl(uint8_t flags, const void* d, uint32_t len);
 int USBD_RecvControl(void* d, uint32_t len);
-int USBD_SendInterfaces(void);
+uint8_t USBD_SendInterfaces(void);
 bool USBD_ClassInterfaceRequest(USBSetup& setup);
 
 

@@ -110,6 +110,8 @@ class Move
 		float GetCoreAxisFactor(size_t axis) const { return axisFactors[axis]; }
 		void SetCoreAxisFactor(size_t axis, float f) { axisFactors[axis] = f; }
 
+		bool IsExtruding() const;														// Is filament being extruded?
+
 	private:
 
 		enum class IdleState : uint8_t { idle, busy, timing };
