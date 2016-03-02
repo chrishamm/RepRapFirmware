@@ -298,10 +298,18 @@ Serial_::operator bool()
 
 	if (_usbLineInfo.lineState > 0)
 	{
-		result = true;
+		if (!USBD_Connected())
+		{
+			_usbLineInfo.lineState = 0;
+			result = false;
+		}
+		else
+		{
+			result = true;
+			delay(10);
+		}
 	}
 
-	delay(10);
 	return result;
 }
 

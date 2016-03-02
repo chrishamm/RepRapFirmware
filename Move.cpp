@@ -470,7 +470,7 @@ int32_t Move::MotorEndPointToMachine(size_t drive, float coord)
 // This is computationally expensive on a delta, so only call it when necessary, and never from the step ISR.
 void Move::MachineToEndPoint(const int32_t motorPos[], float machinePos[], size_t numDrives) const
 {
-	const float *stepsPerUnit = reprap.GetPlatform()->DriveStepsPerUnit();
+	const float *stepsPerUnit = reprap.GetPlatform()->GetDriveStepsPerUnit();
 
 	// Convert the axes
 	if (IsDeltaMode())
@@ -914,7 +914,7 @@ void Move::AdjustDeltaParameters(const float v[], size_t numFactors)
 	// Adjust the motor endpoints to allow for the change in endstop adjustments
 	DDA *lastQueuedMove = ddaRingAddPointer->GetPrevious();
 	const int32_t *endCoordinates = lastQueuedMove->DriveCoordinates();
-	const float *driveStepsPerUnit = reprap.GetPlatform()->DriveStepsPerUnit();
+	const float *driveStepsPerUnit = reprap.GetPlatform()->GetDriveStepsPerUnit();
 
 	for (size_t drive = 0; drive < AXES; ++drive)
 	{
@@ -1196,12 +1196,12 @@ bool Move::StartNextMove(uint32_t startTime)
 }
 
 // This is called from the step ISR. Any variables it modifies that are also read by code outside the ISR must be declared 'volatile'.
-void Move::HitLowStop(size_t drive, DDA* hitDDA)
+void Move::HitLowStop(size_t axis, DDA* hitDDA)
 {
-	if (drive < AXES && !IsDeltaMode())		// should always be true
+	if (axis < AXES && !IsDeltaMode())		// should always be true
 	{
 		float hitPoint;
-		if (drive == Z_AXIS)
+		if (axis == Z_AXIS)
 		{
 			// Special case of doing a G1 S1 Z move on a Cartesian printer. This is not how we normally home the Z axis, we use G30 instead.
 			// But I think it used to work, so let's not break it.
@@ -1209,23 +1209,23 @@ void Move::HitLowStop(size_t drive, DDA* hitDDA)
 		}
 		else
 		{
-			hitPoint = reprap.GetPlatform()->AxisMinimum(drive);
+			hitPoint = reprap.GetPlatform()->AxisMinimum(axis);
 		}
-		JustHomed(drive, hitPoint, hitDDA);
+		JustHomed(axis, hitPoint, hitDDA);
 	}
 }
 
 // This is called from the step ISR. Any variables it modifies that are also read by code outside the ISR must be declared 'volatile'.
-void Move::HitHighStop(size_t drive, DDA* hitDDA)
+void Move::HitHighStop(size_t axis, DDA* hitDDA)
 {
-	if (drive < AXES)		// should always be true
+	if (axis < AXES)		// should always be true
 	{
 		float hitPoint = (IsDeltaMode())
-							? deltaParams.GetHomedCarriageHeight(drive)
+							? deltaParams.GetHomedCarriageHeight(axis)
 							        // this is a Delta printer, so the motor is at the homed carriage height for this drive
-							: reprap.GetPlatform()->AxisMaximum(drive);
+							: reprap.GetPlatform()->AxisMaximum(axis);
 									// this is a Cartesian printer, so we're at the maximum for this axis
-		JustHomed(drive, hitPoint, hitDDA);
+		JustHomed(axis, hitPoint, hitDDA);
 	}
 }
 

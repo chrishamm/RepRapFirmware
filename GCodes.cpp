@@ -28,7 +28,7 @@
 #define DEGREE_SYMBOL        "\xC2\xB0"                              // degree-symbol encoding in UTF8
 
 GCodes::GCodes(Platform* p, Webserver* w) :
-	platform(p), active(false), webserver(w), stackPointer(0), fileStackPointer(0)
+	platform(p), active(false), webserver(w), stackPointer(0), fileStackPointer(0), isFlashing(false)
 {
 	httpGCode = new GCodeBuffer(platform, "http: ");
 	telnetGCode = new GCodeBuffer(platform, "telnet: ");
@@ -952,7 +952,6 @@ void GCodes::SetPositions(float positionNow[DRIVES])
 // Offset the axes by the X, Y, and Z amounts in the M code in gb.  Say the machine is at [10, 20, 30] and
 // the offsets specified are [8, 2, -5].  The machine will move to [18, 22, 25] and henceforth consider that point
 // to be [10, 20, 30].
-
 bool GCodes::OffsetAxes(GCodeBuffer* gb)
 {
 	if (!offSetSet)
@@ -1181,7 +1180,7 @@ bool GCodes::DoSingleZProbeAtPoint(int probePointIndex, float heightAdjust)
 					? 2 * platform->GetZProbeDiveHeight()			// Z axis has been homed, so no point in going very far
 					: 1.1 * platform->AxisTotalLength(Z_AXIS);		// Z axis not homed yet, so treat this as a homing move
 
-				switch(DoZProbe(height))
+				switch (DoZProbe(height))
 				{
 					case 0:
 						// Z probe is already triggered at the start of the move, so abandon the probe and record an error
@@ -1299,12 +1298,8 @@ int GCodes::DoZProbe(float distance)
 // is specified and is greater than SILLY_Z_VALUE (i.e. greater than -9999.0)
 // then that value is used.  If it's less than SILLY_Z_VALUE the bed is
 // probed and that value is used.
-
 bool GCodes::SetSingleZProbeAtAPosition(GCodeBuffer *gb, StringRef& reply)
 {
-	if (!AllMovesAreFinishedAndMoveBufferIsLoaded())
-		return false;
-
 	float heightAdjust = 0.0;
 	if (gb->Seen('H'))
 	{
@@ -1376,14 +1371,18 @@ bool GCodes::SetSingleZProbeAtAPosition(GCodeBuffer *gb, StringRef& reply)
 // This probes multiple points on the bed (three in a
 // triangle or four in the corners), then sets the bed transformation to compensate
 // for the bed not quite being the plane Z = 0.
-
 bool GCodes::SetBedEquationWithProbe(const GCodeBuffer *gb, StringRef& reply)
 {
-	// zpl-2014-10-09: In order to stay compatible with older firmware versions,
+	// In order to stay compatible with older firmware versions,
 	// only execute bed.g if it is actually present in the /sys directory.
 	const char *absoluteBedGPath = platform->GetMassStorage()->CombineName(SYS_DIR, BED_EQUATION_G);
 	if (platform->GetMassStorage()->FileExists(absoluteBedGPath))
 	{
+		if (!CanStartMacro(gb))
+		{
+			return false;
+		}
+
 		if (DoFileMacro(gb, absoluteBedGPath))
 		{
 			settingBedEquationWithProbe = false;
@@ -1400,7 +1399,7 @@ bool GCodes::SetBedEquationWithProbe(const GCodeBuffer *gb, StringRef& reply)
 		return true;
 	}
 
-	// zpl 2014-11-02: When calling G32, ensure bed compensation parameters are initially reset
+	// When calling G32, ensure bed compensation parameters are initially reset
 	if (!settingBedEquationWithProbe)
 	{
 		reprap.GetMove()->SetIdentityTransform();
@@ -1412,8 +1411,7 @@ bool GCodes::SetBedEquationWithProbe(const GCodeBuffer *gb, StringRef& reply)
 		probeCount++;
 	}
 
-	int numProbePoints = reprap.GetMove()->NumberOfXYProbePoints();
-	if (probeCount >= numProbePoints)
+	if (probeCount >= reprap.GetMove()->NumberOfXYProbePoints())
 	{
 		probeCount = 0;
 		zProbesSet = true;
@@ -1427,7 +1425,6 @@ bool GCodes::SetBedEquationWithProbe(const GCodeBuffer *gb, StringRef& reply)
 // This returns the (X, Y) points to probe the bed at probe point count.  When probing,
 // it returns false.  If called after probing has ended it returns true, and the Z coordinate
 // probed is also returned.
-
 bool GCodes::GetProbeCoordinates(int count, float& x, float& y, float& z) const
 {
 	const ZProbeParameters& rp = platform->GetZProbeParameters();
@@ -1508,8 +1505,7 @@ bool GCodes::SetPrintZProbe(GCodeBuffer* gb, StringRef& reply)
 // are updated at the end of each movement, so this won't tell you
 // where you are mid-movement.
 
-//Fixed to deal with multiple extruders
-
+// Fixed to deal with multiple extruders
 void GCodes::GetCurrentCoordinates(StringRef &s) const
 {
 	float liveCoordinates[DRIVES + 1];
@@ -1653,7 +1649,6 @@ void GCodes::WriteGCodeToFile(GCodeBuffer *gb)
 }
 
 // Set up a file to print, but don't print it yet.
-
 void GCodes::QueueFileToPrint(const char* fileName)
 {
 	FileStore *f = platform->GetFileStore(platform->GetGCodeDir(), fileName, false);
@@ -1689,9 +1684,7 @@ void GCodes::DeleteFile(const char* fileName)
 	}
 }
 
-// Function to handle dwell delays.  Return true for
-// dwell finished, false otherwise.
-
+// Function to handle dwell delays.  Return true for dwell finished, false otherwise.
 bool GCodes::DoDwell(GCodeBuffer *gb)
 {
 	if (!gb->Seen('P'))
@@ -1725,7 +1718,6 @@ bool GCodes::DoDwell(GCodeBuffer *gb)
 bool GCodes::DoDwellTime(float dwell)
 {
 	// Are we already in the dwell?
-
 	if (dwellWaiting)
 	{
 		if (platform->Time() - dwellTime >= 0.0)
@@ -1738,7 +1730,6 @@ bool GCodes::DoDwellTime(float dwell)
 	}
 
 	// New dwell - set it up
-
 	reprap.GetMove()->AllMovesAreFinished();
 	dwellWaiting = true;
 	dwellTime = platform->Time() + dwell;
@@ -2012,6 +2003,12 @@ void GCodes::HandleReply(GCodeBuffer *gb, bool error, const char *reply)
 		return;
 	}
 
+	// Make sure macro responses are sent to the right destination
+	if (gb == fileMacroGCode)
+	{
+		gb = const_cast<GCodeBuffer *>(macroSourceGCodeBuffer);
+	}
+
 	// Second UART device, e.g. dc42's PanelDue. Do NOT use emulation for this one!
 	if (gb == auxGCode)
 	{
@@ -2135,10 +2132,14 @@ void GCodes::HandleReply(GCodeBuffer *gb, bool error, OutputBuffer *reply)
 		return;
 	}
 
-	// If we're executing a queued code, make sure gb points to the right source
+	// If we're executing a queued code or a macro G-code, make sure gb points to the right source
 	if (gb == queueGCode)
 	{
 		gb = queueGCodeSource;
+	}
+	else if (gb == fileMacroGCode)
+	{
+		gb = const_cast<GCodeBuffer *>(macroSourceGCodeBuffer);
 	}
 
 	// Second UART device, e.g. dc42's PanelDue. Do NOT use emulation for this one!
@@ -2659,6 +2660,10 @@ bool GCodes::HandleGcode(GCodeBuffer* gb)
 			break;
 
 		case 30: // Z probe/manually set at a position and set that as point P
+			if (!AllMovesAreFinishedAndMoveBufferIsLoaded())
+			{
+				return false;
+			}
 			if (reprap.GetMove()->IsDeltaMode() && !AllAxesAreHomed())
 			{
 				reply.copy("Must home a delta printer before bed probing\n");
@@ -2671,20 +2676,15 @@ bool GCodes::HandleGcode(GCodeBuffer* gb)
 			break;
 
 		case 31: // Return the probe value, or set probe variables
+			if (!AllMovesAreFinishedAndMoveBufferIsLoaded())
+			{
+				return false;
+			}
 			result = SetPrintZProbe(gb, reply);
 			break;
 
 		case 32: // Probe Z at multiple positions and generate the bed transform
-			if (!settingBedEquationWithProbe && !(axisIsHomed[X_AXIS] && axisIsHomed[Y_AXIS]))
-			{
-				// We can only do bed levelling if X and Y have already been homed
-				reply.copy("Must home X and Y before bed probing\n");
-				error = true;
-			}
-			else
-			{
-				result = SetBedEquationWithProbe(gb, reply);
-			}
+			result = SetBedEquationWithProbe(gb, reply);
 			break;
 
 		case 90: // Absolute coordinates
@@ -4013,6 +4013,17 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			}
 			break;
 
+		case 143: // Maximum hot-end temperature
+			if (gb->Seen('S'))
+			{
+				reprap.GetHeat()->SetMaxHeaterTemperature(gb->GetFValue());
+			}
+			else
+			{
+				reply.printf("Maximum heater temperature is %.2fC\n", reprap.GetHeat()->GetMaxHeaterTemperature());
+			}
+			break;
+
 		case 144: // Set bed to standby
 			{
 				const int8_t bedHeater = reprap.GetHeat()->GetBedHeater();
@@ -5277,9 +5288,27 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			}
 			break;
 
-		/*case 997: // Perform firmware update
+		case 997: // Perform firmware update
+			if (!platform->GetMassStorage()->FileExists(platform->GetSysDir(), IAP_FIRMWARE_FILE))
+			{
+				platform->MessageF(GENERIC_MESSAGE, "Error: Firmware file \"%s\" not found in sys directory\n", IAP_FIRMWARE_FILE);
+				break;
+			}
+			if (!platform->GetMassStorage()->FileExists(platform->GetSysDir(), IAP_UPDATE_FILE))
+			{
+				platform->MessageF(GENERIC_MESSAGE, "Error: IAP file \"%s\" not found in sys directory\n", IAP_UPDATE_FILE);
+				break;
+			}
+
+			isFlashing = true;
+			if (!DoDwellTime(1.0))
+			{
+				// wait a second so all HTTP clients are notified
+				return false;
+			}
 			platform->UpdateFirmware();
-			break;*/
+			isFlashing = false;				// should never get here, but leave this here in case an error has occurred
+			break;
 
 		case 998: // Request resend of line
 			if (gb->Seen('P'))
@@ -5433,7 +5462,6 @@ bool GCodes::ChangeTool(GCodeBuffer *gb, int newToolNumber)
 	Tool* newTool = reprap.GetTool(newToolNumber);
 
 	// Allow the tool change macros to be skipped if the 'S0' parameter is passed
-
 	if (gb->Seen('S') && gb->GetIValue() == 0)
 	{
 		if (oldTool != nullptr)
@@ -5453,7 +5481,6 @@ bool GCodes::ChangeTool(GCodeBuffer *gb, int newToolNumber)
 
 	// If old and new are the same still follow the sequence -
 	// The user may want the macros run.
-
 	switch(toolChangeSequence)
 	{
 		case 0: // Pre-release sequence for the old tool (if any)

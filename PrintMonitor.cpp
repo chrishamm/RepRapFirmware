@@ -956,30 +956,38 @@ bool PrintMonitor::FindHeight(const char* buf, size_t len, float& height) const
 				for(size_t j = i + 3; j < len - 2; j++)
 				{
 					char c = buf[j];
-					if (c < ' ')
+					if (c == ';')
 					{
-						// Skip all whitespaces...
-						while (j < len - 2 && c <= ' ')
-						{
-							c = buf[++j];
-						}
-						// ...to make sure ";End" doesn't follow G0 .. Z#HEIGHT#
-						if (zPos != 0 && (buf[j] != ';' || buf[j + 1] != 'E'))
-						{
-							//debugPrintf("Found at offset %u text: %.100s\n", zPos, &buf[zPos + 1]);
-							height = strtod(&buf[zPos + 1], nullptr);
-							return true;
-						}
-						break;
+						inComment = true;
 					}
-					else if (c == ';')
-					{
-						// Ignore comments
-						break;
-					}
-					else if (c == 'Z')
+					else if (c == 'Z' && !inComment)
 					{
 						zPos = j;
+					}
+					else if (c == '\n')
+					{
+						if (zPos != 0)
+						{
+							// Check special case of this code ending with ";E" - ignore such codes
+							j = zPos;
+							while (j < len - 2 && c != '\n')
+							{
+								c = buf[++j];
+								if (c == ';' && buf[j + 1] == 'E')
+								{
+									zPos = 0;
+									break;
+								}
+							}
+
+							if (zPos != 0)
+							{
+								// Z position is valid - read it
+								height = strtod(&buf[zPos + 1], nullptr);
+								return true;
+							}
+						}
+						break;
 					}
 				}
 			}

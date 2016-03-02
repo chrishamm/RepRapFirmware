@@ -54,11 +54,11 @@ void RepRap::Init()
 	platform->Message(HOST_MESSAGE, "\nExecuting ");
 	if (platform->GetMassStorage()->FileExists(platform->GetSysDir(), configFile))
 	{
-		platform->MessageF(HOST_MESSAGE, "%s... ", platform->GetConfigFile());
+		platform->MessageF(HOST_MESSAGE, "%s...", platform->GetConfigFile());
 	}
 	else
 	{
-		platform->MessageF(HOST_MESSAGE, "%s (no configuration file found)... ", platform->GetDefaultFile());
+		platform->MessageF(HOST_MESSAGE, "%s (no configuration file found)...", platform->GetDefaultFile());
 		configFile = platform->GetDefaultFile();
 	}
 
@@ -68,12 +68,13 @@ void RepRap::Init()
 		Spin();
 	}
 	processingConfig = false;
-	platform->Message(HOST_MESSAGE, "Done!\n");
+	platform->Message(HOST_MESSAGE, " Done!\n");
 
 	if (network->IsEnabled())
 	{
-		// EMAC driver will report when it's starting up; no need to do this twice
-		network->Enable();	// Need to do this here, as the configuration GCodes may set IP address etc.
+		// Need to do this here, as the configuration GCodes may set IP address etc.
+		platform->Message(HOST_MESSAGE, "Starting network...\n");
+		network->Enable();
 	}
 	else
 	{
@@ -190,8 +191,6 @@ void RepRap::EmergencyStop()
 {
 	stopped = true;
 	platform->SetAtxPower(false);		// turn off the ATX power if we can
-
-	//platform->DisableInterrupts();
 
 	Tool* tool = toolList;
 	while(tool)
@@ -1382,6 +1381,11 @@ char RepRap::GetStatusCharacter() const
 	{
 		// Reading the configuration file
 		return 'C';
+	}
+	if (gCodes->IsFlashing())
+	{
+		// Flashing a new firmware binary
+		return 'F';
 	}
 	if (IsStopped())
 	{

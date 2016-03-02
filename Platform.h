@@ -526,7 +526,7 @@ class Platform
 		void SetIdleCurrentFactor(float f);
 		float GetIdleCurrentFactor() const { return idleCurrentFactor; }
 		float DriveStepsPerUnit(size_t drive) const;
-		const float *DriveStepsPerUnit() const { return driveStepsPerUnit; }
+		const float *GetDriveStepsPerUnit() const { return driveStepsPerUnit; }
 		void SetDriveStepsPerUnit(size_t drive, float value);
 		float Acceleration(size_t drive) const;
 		const float* Accelerations() const;
@@ -587,6 +587,7 @@ class Platform
 		MAX31855 Max31855Devices[MAX31855_DEVICES];
 		static const char* TempErrorStr(TempError err);
 		static bool TempErrorPermanent(TempError err);
+		void UpdateMaxHeaterTemperature();
 
 		// Fans
 

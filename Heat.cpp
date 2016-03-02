@@ -22,7 +22,8 @@ Licence: GPL
 
 const float invHeatPwmAverageCount = HEAT_SAMPLE_TIME/HEAT_PWM_AVERAGE_TIME;
 
-Heat::Heat(Platform* p) : platform(p), active(false), coldExtrude(false), bedHeater(BED_HEATER), chamberHeater(-1)
+Heat::Heat(Platform* p) : platform(p), active(false), coldExtrude(false),
+	maxHeaterTemperature(BAD_HIGH_TEMPERATURE), bedHeater(BED_HEATER), chamberHeater(-1)
 {
 	for(size_t heater = 0; heater < HEATERS; heater++)
 	{
@@ -130,6 +131,12 @@ bool Heat::HeaterAtSetTemperature(int8_t heater) const
 	return (target < TEMPERATURE_LOW_SO_DONT_CARE) || (fabs(dt - target) <= TEMPERATURE_CLOSE_ENOUGH);
 }
 
+void Heat::SetMaxHeaterTemperature(float t)
+{
+	maxHeaterTemperature = t;
+	platform->UpdateMaxHeaterTemperature();
+}
+
 //******************************************************************************************************
 
 PID::PID(Platform* p, int8_t h) : platform(p), heater(h)
@@ -155,6 +162,28 @@ void PID::Init()
 	// time as the initial value so as to not trigger an immediate warning from
 	// the Tick ISR.
 	lastSampleTime = millis();
+}
+
+void PID::SetActiveTemperature(float t)
+{
+	if (t > reprap.GetHeat()->GetMaxHeaterTemperature())
+	{
+		platform->MessageF(GENERIC_MESSAGE, "Error: Temperature %.1f too high for heater %d!\n", t, heater);
+	}
+
+	SwitchOn();
+	activeTemperature = t;
+}
+
+void PID::SetStandbyTemperature(float t)
+{
+	if (t > reprap.GetHeat()->GetMaxHeaterTemperature())
+	{
+		platform->MessageF(GENERIC_MESSAGE, "Error: Temperature %.1f too high for heater %d!\n", t, heater);
+	}
+
+	SwitchOn();
+	standbyTemperature = t;
 }
 
 void PID::SwitchOn()
@@ -202,7 +231,7 @@ void PID::Spin()
 	// We are switched on.  Check for faults.  Temperature silly-low or silly-high mean open-circuit
 	// or shorted thermistor respectively.
 
-	if (temperature < BAD_LOW_TEMPERATURE || temperature > BAD_HIGH_TEMPERATURE)
+	if (temperature < BAD_LOW_TEMPERATURE || temperature > reprap.GetHeat()->GetMaxHeaterTemperature())
 	{
 		if (platform->DoThermistorAdc(heater) || !(Platform::TempErrorPermanent(err)))
 		{

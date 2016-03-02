@@ -92,6 +92,9 @@ class Heat
 		void AllowColdExtrude();									// Allow cold extrusion
 		void DenyColdExtrude();										// Deny cold extrusion
 
+		float GetMaxHeaterTemperature() const;
+		void SetMaxHeaterTemperature(float t);
+
 		int8_t GetBedHeater() const;								// Get hot bed heater number
 		void SetBedHeater(int8_t heater);							// Set hot bed heater number
 
@@ -126,6 +129,7 @@ class Heat
 		PID* pids[HEATERS];							// A PID controller for each heater
 
 		bool coldExtrude;							// Is cold extrusion allowed?
+		float maxHeaterTemperature;					// What is the maximum allowed heater temperature?
 		int8_t bedHeater;							// Index of the hot bed heater to use or -1 if none is available
 		int8_t chamberHeater;						// Index of the chamber heater to use or -1 if none is available
 
@@ -141,31 +145,9 @@ inline bool PID::Active() const
 	return active;
 }
 
-inline void PID::SetActiveTemperature(float t)
-{
-	if (t > BAD_HIGH_TEMPERATURE)
-	{
-		platform->MessageF(GENERIC_MESSAGE, "Error: Temperature %.1f too high for heater %d!\n", t, heater);
-	}
-
-	SwitchOn();
-	activeTemperature = t;
-}
-
 inline float PID::GetActiveTemperature() const
 {
 	return activeTemperature;
-}
-
-inline void PID::SetStandbyTemperature(float t)
-{
-	if (t > BAD_HIGH_TEMPERATURE)
-	{
-		platform->MessageF(GENERIC_MESSAGE, "Error: Temperature %.1f too high for heater %d!\n", t, heater);
-	}
-
-	SwitchOn();
-	standbyTemperature = t;
 }
 
 inline float PID::GetStandbyTemperature() const
@@ -267,6 +249,11 @@ inline void Heat::AllowColdExtrude()
 inline void Heat::DenyColdExtrude()
 {
 	coldExtrude = false;
+}
+
+inline float Heat::GetMaxHeaterTemperature() const
+{
+	return maxHeaterTemperature;
 }
 
 inline int8_t Heat::GetBedHeater() const

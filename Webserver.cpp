@@ -415,6 +415,7 @@ void ProtocolInterpreter::DoFastUpload(NetworkTransaction *transaction)
 	unsigned int len;
 	if (transaction->ReadBuffer(buffer, len))
 	{
+		// Writing data usually takes a while, so keep LwIP running while this is being done
 		network->Unlock();
 		if (!fileBeingUploaded.Write(buffer, len))
 		{
@@ -923,15 +924,15 @@ bool Webserver::HttpInterpreter::GetJsonResponse(const char* request, OutputBuff
 		}
 		else if (StringEquals(request, "fileinfo"))
 		{
+			// This may take a while before it returns, so allow LwIP to send ACKs while we're waiting for it
+			network->Unlock();
 			OutputBuffer::Release(response);
-			if (reprap.GetPrintMonitor()->GetFileInfoResponse(StringEquals(key, "name") ? value : nullptr, response))
-			{
-				processingDeferredRequest = false;
-			}
-			else
+			processingDeferredRequest = !reprap.GetPrintMonitor()->GetFileInfoResponse(StringEquals(key, "name") ? value : nullptr, response);
+			while (!network->Lock());	// This won't block for long
+
+			if (processingDeferredRequest)
 			{
 				network->GetTransaction()->Defer();
-				processingDeferredRequest = true;
 			}
 		}
 		else if (StringEquals(request, "move"))

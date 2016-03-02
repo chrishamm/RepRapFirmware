@@ -23,10 +23,10 @@ extern "C" {
 }
 #include "WMath.h"
 
-extern long random()
+extern uint32_t trueRandom()
 {
 	while (! (TRNG->TRNG_ISR & TRNG_ISR_DATRDY));
-	return TRNG->TRNG_ODATA;
+	return (uint32_t)TRNG->TRNG_ODATA;
 }
 
 extern long random( long howbig )
@@ -36,7 +36,7 @@ extern long random( long howbig )
 		return 0 ;
 	}
 
-	return random() % howbig;
+	return trueRandom() % howbig;
 }
 
 extern long random( long howsmall, long howbig )

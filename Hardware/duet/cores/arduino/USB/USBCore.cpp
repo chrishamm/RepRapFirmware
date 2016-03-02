@@ -825,15 +825,13 @@ void USBD_Flush(uint32_t ep)
 		UDD_ReleaseTX(ep);
 }
 
-//	VBUS or counting frames
-//	Any frame counting?
+// Check VBUS state. Checking if USB frames are counting or not is no
+// reliable way to detect if a USB device is attached or not.
 uint32_t USBD_Connected(void)
 {
-	uint8_t f = UDD_GetFrameNumber();
-
-	delay(3);
-
-	return f != UDD_GetFrameNumber();
+	// SAM3X BUG: VBUS bit is bit 13, not 12 (at least that changes as expected when VBUS does)
+	const uint32_t UOTG_SR_VBUS_REAL = (1 << 12);
+	return (UOTGHS->UOTGHS_SR & UOTG_SR_VBUS_REAL);
 }
 
 
@@ -880,7 +878,6 @@ bool USBDevice_::detach(void)
 }
 
 //	Check for interrupts
-//	TODO: VBUS detection
 bool USBDevice_::configured()
 {
 	return _usbConfiguration;

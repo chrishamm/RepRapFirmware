@@ -1,4 +1,4 @@
-Custom hardware tree for the Duet platform (version 1.0.8)
+Custom hardware tree for the Duet platform (version 1.0.9)
 
 
 This device tree is based on the official "Arduino Due" 1.6.5 platform files, however the following changes have been made:
@@ -10,6 +10,7 @@ This device tree is based on the official "Arduino Due" 1.6.5 platform files, ho
 - TRNG support for random() has been added
 - Low-level Arduino libraries from RepRapFirmware have been integrated
 - SamNonDuePin library has been merged into the SAM3X variant code
+- Implemented USB VBUS detection to check properly if the USB port is open
 
 To include this hardware tree, open the Arduino IDE.  Open the Boards Manager and install the Due device tree.  Then
 go to File -> Preferences and set "Additional Boards Manager URLs" to:

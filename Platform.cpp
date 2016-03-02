@@ -595,7 +595,7 @@ bool Platform::SetZProbeParameters(const struct ZProbeParameters& params)
 // Return true if we must home X and Y before we home Z (i.e. we are using a bed probe)
 bool Platform::MustHomeXYBeforeZ() const
 {
-	return nvData.zProbeType != 0;
+	return nvData.zProbeType != 0 && nvData.zProbeAxes[Z_AXIS];
 }
 
 void Platform::ResetNvData()
@@ -669,19 +669,16 @@ void Platform::SetAutoSave(bool enabled)
 
 void Platform::UpdateFirmware()
 {
-	// Check if the required files for IAP are present
-	/*if (GetMassStorage()->FileExists(GetSysDir(), IAP_FIRMWARE_FILE))
-	{
-		MessageF(GENERIC_MESSAGE, "Error: Could not find firmware file \"%s\"", IAP_RRF_FILE);
-		return;
-	}*/
-
 	FileStore *iapFile = GetFileStore(GetSysDir(), IAP_UPDATE_FILE, false);
 	if (iapFile == nullptr)
 	{
-		MessageF(GENERIC_MESSAGE, "Error: Could not find IAP programmer binary \"%s\"", IAP_UPDATE_FILE);
+		MessageF(GENERIC_MESSAGE, "Error: Could not open IAP programmer binary \"%s\"\n", IAP_UPDATE_FILE);
 		return;
 	}
+
+	// The machine will be unresponsive for a few seconds, don't risk damaging the heaters...
+	reprap.EmergencyStop();
+
 
 	// Step 1 - Write update binary to Flash
 	char data[IFLASH_PAGE_SIZE];
@@ -724,7 +721,9 @@ void Platform::UpdateFirmware()
 		NVIC->ICER[i] = 0xFFFFFFFF;		// Disable IRQs
 		NVIC->ICPR[i] = 0xFFFFFFFF;		// Clear pending IRQs
 	}
-	//watchdogDisable();				// FIXME: Remove this, probably doesn't work anyway
+
+	// Our SAM3X doesn't support disabling the watchdog, so leave it running.
+	// The IAP binary will kick it as soon as it's started
 
 	// Modify vector table location
 	__DSB();
@@ -732,9 +731,6 @@ void Platform::UpdateFirmware()
 	SCB->VTOR = ((uint32_t)IAP_FLASH_START & SCB_VTOR_TBLOFF_Msk);
 	__DSB();
 	__ISB();
-
-	//debugPrintf("old sp: %08x, old pc: %08x\n", *((uint32_t*)IFLASH_ADDR), *((uint32_t*)IFLASH_ADDR + 4));
-	//debugPrintf("new sp: %08x, new pc: %08x\n", *((uint32_t*)IAP_FLASH_START), *((uint32_t*)IAP_FLASH_START + 4));
 
 	// Reset stack pointer, enable IRQs again and start the new IAP binary
 	__set_MSP(*(uint32_t *)IAP_FLASH_START);
@@ -897,7 +893,7 @@ void Platform::Spin()
 	OutputBuffer *usbOutputBuffer = usbOutput->GetFirstItem();
 	if (usbOutputBuffer != nullptr)
 	{
-		if (!SERIAL_MAIN_DEVICE || usbOutputBuffer->GetAge() > SERIAL_MAIN_TIMEOUT)
+		if (!SERIAL_MAIN_DEVICE)
 		{
 			// If the USB port is not opened, free the data left for writing
 			OutputBuffer::ReleaseAll(usbOutputBuffer);
@@ -1340,6 +1336,18 @@ const PidParameters& Platform::GetPidParameters(size_t heater) const
 void Platform::SetHeater(size_t heater, float power)
 {
 	SetHeaterPwm(heater, (uint8_t)(255.0 * min<float>(1.0, max<float>(0.0, power))));
+}
+
+void Platform::UpdateMaxHeaterTemperature()
+{
+	for(size_t heater = 0; heater < HEATERS; heater++)
+	{
+		float thermistorOverheatResistance = nvData.pidParams[heater].GetRInf()
+				* exp(-nvData.pidParams[heater].GetBeta() / (reprap.GetHeat()->GetMaxHeaterTemperature() - ABS_ZERO));
+		float thermistorOverheatAdcValue = (AD_RANGE_REAL + 1) * thermistorOverheatResistance
+				/ (thermistorOverheatResistance + nvData.pidParams[heater].thermistorSeriesR);
+		thermistorOverheatSums[heater] = (uint32_t) (thermistorOverheatAdcValue + 0.9) * THERMISTOR_AVERAGE_READINGS;
+	}
 }
 
 void Platform::SetHeaterPwm(size_t heater, uint8_t power)

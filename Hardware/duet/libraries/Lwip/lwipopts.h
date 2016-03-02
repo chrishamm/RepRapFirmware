@@ -60,9 +60,6 @@
 #define NO_SYS                		1
 #define LWIP_RAW                  	0
 
-/* Enable DHCP */
-#define DHCP_USED					1
-
 /* Network interface options */
 #define LWIP_NETIF_HOSTNAME			1
 #define LWIP_NETIF_STATUS_CALLBACK	1
@@ -99,7 +96,7 @@ a lot of data that needs to be copied, this should be set high. */
 
 /* --------- IGMP options ---------- */
 #define LWIP_IGMP					1
-#define LWIP_RAND					random
+#define LWIP_RAND					trueRandom
 #define SO_REUSE					1
 
 
@@ -148,7 +145,7 @@ a lot of data that needs to be copied, this should be set high. */
 
 /* ---------- Pbuf options ---------- */
 /* PBUF_POOL_SIZE: the number of buffers in the pbuf pool. */
-#define PBUF_POOL_SIZE				6
+#define PBUF_POOL_SIZE				5
 
 /* PBUF_POOL_BUFSIZE: the size of each pbuf in the pbuf pool.
  * DO NOT DEFINE IT HERE, the correct value needs to be calculated from TCP_MSS. */
@@ -230,7 +227,6 @@ a lot of data that needs to be copied, this should be set high. */
 #define ICMP_TTL					255
 
 
-#if defined(DHCP_USED)
 /* ---------- DHCP options ---------- */
 /* Define LWIP_DHCP to 1 if you want DHCP configuration of
    interfaces. DHCP is not implemented in lwIP 0.5.1, however, so
@@ -240,25 +236,11 @@ a lot of data that needs to be copied, this should be set high. */
 /* 1 if you want to do an ARP check on the offered address
    (recommended). */
 #define DHCP_DOES_ARP_CHECK			1
-#endif
 
 
 /* ---------- Statistics options ---------- */
 #define LWIP_STATS					1
 #define LWIP_STATS_DISPLAY			1
-
-
-#if LWIP_STATS
-#define LINK_STATS					1
-#define IP_STATS					1
-#define ICMP_STATS					1
-#define UDP_STATS					1
-#define TCP_STATS					1
-#define MEM_STATS					1
-#define MEMP_STATS					1
-#define PBUF_STATS					1
-#define SYS_STATS					1
-#endif /* STATS */
 
 
 /* ---------- Lwip Debug options ---------- */

@@ -108,6 +108,7 @@ class GCodes
 		void MoveQueued();											// Announce a new move to be executed
 		void MoveCompleted();										// Indicate that a move has been completed (called by ISR)
 		bool HaveAux() const;										// Any device on the AUX line?
+		bool IsFlashing() const { return isFlashing; }				// Is a new firmware binary going to be flashed?
 		bool IsPausing() const;
 		bool IsPaused() const;
 		bool IsResuming() const;
@@ -212,7 +213,7 @@ class GCodes
 		bool homeX;													// True to home the X axis this move
 		bool homeY;													// True to home the Y axis this move
 		bool homeZ;													// True to home the Z axis this move
-		int probeCount;												// Counts multiple probe points
+		size_t probeCount;											// Counts multiple probe points
 		int8_t cannedCycleMoveCount;								// Counts through internal (i.e. not macro) canned cycle moves
 		bool cannedCycleMoveQueued;									// True if a canned cycle move has been set
 		bool zProbesSet;											// True if all Z probing is done and we can set the bed equation
@@ -237,6 +238,7 @@ class GCodes
 		float simulationTime;
 		FilePosition filePos;										// The position we got up to in the file being printed
 		FilePosition moveFilePos;									// Saved version of filePos for the next real move to be processed
+		bool isFlashing;											// Is a new firmware binary going to be flashed?
 };
 
 //*****************************************************************************************************

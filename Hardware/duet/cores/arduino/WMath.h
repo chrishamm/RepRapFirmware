@@ -22,7 +22,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-extern long random();
+
+extern uint32_t trueRandom();
 
 #ifdef __cplusplus
 }

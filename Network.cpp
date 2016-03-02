@@ -42,15 +42,21 @@
 
 extern "C"
 {
+#include "ethernet_sam.h"
+
 #include "lwipopts.h"
 #ifdef LWIP_STATS
 #include "lwip/src/include/lwip/stats.h"
 #endif
 #include "lwip/src/include/lwip/tcp.h"
+#include "lwip/src/include/lwip/tcp_impl.h"
 
 #include "contrib/apps/netbios/netbios.h"
 #include "contrib/apps/mdns/mdns_responder.h"
 }
+
+static volatile bool lwipLocked = false;
+static volatile bool hasLink = false;
 
 static tcp_pcb *http_pcb = nullptr;
 static tcp_pcb *ftp_main_pcb = nullptr;
@@ -88,9 +94,7 @@ static const char *mdns_txt_records[] = {
 
 static bool closingDataPort = false;
 
-static volatile bool lwipLocked = false;
-
-static NetworkTransaction *sendingTransaction = nullptr;
+static ConnectionState *sendingConnection = nullptr;
 static uint32_t sendingWindow32[(TCP_WND + 3)/4];						// should be 32-bit aligned for efficiency
 static inline char* sendingWindow() { return reinterpret_cast<char*>(sendingWindow32); }
 static uint16_t sendingWindowSize, sentDataOutstanding;
@@ -98,24 +102,13 @@ static uint8_t sendingRetries;
 
 static uint16_t httpPort = DEFAULT_HTTP_PORT;
 
-// Called only by LWIP to put out a message.
-// May be called from C as well as C++
-
-extern "C" void RepRapNetworkMessage(const char* s)
-{
-#ifdef LWIP_DEBUG
-	reprap.GetPlatform()->Message(DEBUG_MESSAGE, s);
-#else
-	reprap.GetPlatform()->Message(HOST_MESSAGE, s);
-#endif
-}
 
 /*-----------------------------------------------------------------------------------*/
 
 extern "C"
 {
-
 // Lock functions for LWIP (LWIP generally isn't thread-safe)
+
 bool LockLWIP()
 {
 	if (lwipLocked)
@@ -130,17 +123,32 @@ void UnlockLWIP()
 	lwipLocked = false;
 }
 
-// Callback functions for the EMAC driver (called from ISR)
+// Callback functions for the EMAC driver
 
-static void emac_read_packet(uint32_t ul_status)
+// Callback to report when the link has gone up or down
+static void ethernet_status_callback(struct netif *netif)
+{
+	hasLink = netif_is_up(netif);
+	if (hasLink)
+	{
+		char ip[16];
+		ipaddr_ntoa_r(&(netif->ip_addr), ip, sizeof(ip));
+		reprap.GetPlatform()->MessageF(HOST_MESSAGE, "Network up, IP=%s\n", ip);
+	}
+	else
+	{
+		reprap.GetPlatform()->Message(HOST_MESSAGE, "Network down\n");
+	}
+}
+
+// Called from ISR
+static void ethernet_rx_callback(uint32_t ul_status)
 {
 	// Because the LWIP stack can become corrupted if we work with it in parallel,
 	// we may have to wait for the next Spin() call to read the next packet.
-	if (ethernet_is_ready() && LockLWIP())
+	if (LockLWIP())
 	{
-		do {
-			// read all queued packets from the RX buffer
-		} while (ethernet_read());
+		ethernet_task();
 		UnlockLWIP();
 	}
 	else
@@ -150,7 +158,8 @@ static void emac_read_packet(uint32_t ul_status)
 	}
 }
 
-// Callback functions called by LWIP (may be called from ISR)
+
+// Callback functions for LWIP (may be called from ISR)
 
 static void conn_err(void *arg, err_t err)
 {
@@ -160,12 +169,13 @@ static void conn_err(void *arg, err_t err)
 	ConnectionState *cs = (ConnectionState*)arg;
 	if (cs != nullptr)
 	{
-		reprap.GetNetwork()->ConnectionClosed(cs, false);	// tell the higher levels about the error
-		if (sendingTransaction == cs->sendingTransaction)
+		if (reprap.Debug(moduleNetwork))
 		{
-			sendingTransaction = nullptr;
-			sentDataOutstanding = 0;
+			reprap.GetPlatform()->Message(HOST_MESSAGE, "Network: This connection has a valid CS\n");
 		}
+
+		// Tell the higher levels about the error
+		reprap.GetNetwork()->ConnectionClosed(cs, false);
 	}
 }
 
@@ -174,23 +184,23 @@ static void conn_err(void *arg, err_t err)
 static err_t conn_poll(void *arg, tcp_pcb *pcb)
 {
 	ConnectionState *cs = (ConnectionState*)arg;
-	if (cs != nullptr && sendingTransaction != nullptr && cs == sendingTransaction->GetConnection())
+	if (cs == sendingConnection)
 	{
-		// Data could not be sent, check if the connection has to be timed out
+		// Data could not be sent in time, check if the connection has to be timed out
 		sendingRetries++;
-		if (sendingRetries == 4)
+		if (sendingRetries == TCP_MAX_SEND_RETRIES)
 		{
-			reprap.GetPlatform()->Message(HOST_MESSAGE, "Network: Poll couldn't send data after 4 retries!\n");
+			reprap.GetPlatform()->MessageF(HOST_MESSAGE, "Network: Poll couldn't send data after %d retries!\n", TCP_MAX_SEND_RETRIES);
 			tcp_abort(pcb);
 			return ERR_ABRT;
 		}
 
-		// Is there enough space left for sending?
-		if (tcp_sndbuf(pcb) < sentDataOutstanding)
+		// Do we have enough space left for sending? Third-party apps may be sending data as well, so check this first
+		if (tcp_sndbuf(pcb) < TCP_WND)
 		{
 			if (reprap.Debug(moduleNetwork))
 			{
-				reprap.GetPlatform()->MessageF(HOST_MESSAGE, "Network: Could not send data in conn_poll because not enough sending space is available (retry %d of 4)\n", sendingRetries);
+				reprap.GetPlatform()->Message(HOST_MESSAGE, "Network: Could not send data because not enough sending space is available\n");
 			}
 			return ERR_MEM;
 		}
@@ -200,21 +210,19 @@ static err_t conn_poll(void *arg, tcp_pcb *pcb)
 		if (err == ERR_OK)
 		{
 			err = tcp_output(pcb);
-			if (err != ERR_OK)
-			{
-				reprap.GetPlatform()->MessageF(HOST_MESSAGE, "Network: tcp_output in conn_poll failed with code %d\n", err);
-				tcp_abort(pcb);
-				return ERR_ABRT;
-			}
 		}
-		else
+
+		if (ERR_IS_FATAL(err))
 		{
-			reprap.GetPlatform()->MessageF(HOST_MESSAGE, "Network: tcp_write in conn_poll failed with code %d\n", err);
+			reprap.GetPlatform()->MessageF(HOST_MESSAGE, "Network: Failed to write data in conn_poll (code %d)\n", err);
 			tcp_abort(pcb);
 			return ERR_ABRT;
 		}
 	}
-
+	else
+	{
+		reprap.GetPlatform()->Message(HOST_MESSAGE, "Network: Mismatched pcb in conn_poll!\n");
+	}
 	return ERR_OK;
 }
 
@@ -222,12 +230,22 @@ static err_t conn_poll(void *arg, tcp_pcb *pcb)
 
 static err_t conn_sent(void *arg, tcp_pcb *pcb, u16_t len)
 {
-	LWIP_UNUSED_ARG(pcb);
-
 	ConnectionState *cs = (ConnectionState*)arg;
-	if (cs != nullptr)
+	if (cs == sendingConnection)
 	{
-		reprap.GetNetwork()->SentPacketAcknowledged(cs, len);
+		if (sentDataOutstanding > len)
+		{
+			sentDataOutstanding -= len;
+		}
+		else
+		{
+			tcp_poll(pcb, nullptr, TCP_WRITE_TIMEOUT / TCP_SLOW_INTERVAL / TCP_MAX_SEND_RETRIES);
+			sendingConnection = nullptr;
+		}
+	}
+	else
+	{
+		reprap.GetPlatform()->Message(HOST_MESSAGE, "Network: Mismatched pcb in conn_sent!\n");
 	}
 	return ERR_OK;
 }
@@ -241,21 +259,31 @@ static err_t conn_recv(void *arg, tcp_pcb *pcb, pbuf *p, err_t err)
 	{
 		if (cs->pcb != pcb)
 		{
-			reprap.GetPlatform()->Message(HOST_MESSAGE, "Network: Mismatched pcb!\n");
+			reprap.GetPlatform()->Message(HOST_MESSAGE, "Network: Mismatched pcb in conn_recv!\n");
 			tcp_abort(pcb);
 			return ERR_ABRT;
 		}
 
+		bool processingOk = true;
 		if (p != nullptr)
 		{
 			// Tell higher levels that we are receiving data
-			reprap.GetNetwork()->ReceiveInput(p, cs);
+			processingOk = reprap.GetNetwork()->ReceiveInput(p, cs);
 		}
 		else if (cs->persistConnection)
 		{
-			// This is called when the connection has been gracefully closed, but LWIP doesn't close these
-			// connections automatically. That's why we must do it once all packets have been read.
-			reprap.GetNetwork()->ConnectionClosedGracefully(cs);
+			// Tell higher levels that a connection has been closed
+			processingOk = reprap.GetNetwork()->ConnectionClosedGracefully(cs);
+		}
+
+		if (!processingOk)
+		{
+			if (p != nullptr)
+			{
+				pbuf_free(p);
+			}
+			tcp_abort(pcb);
+			return ERR_ABRT;
 		}
 	}
 
@@ -268,10 +296,6 @@ static err_t conn_accept(void *arg, tcp_pcb *pcb, err_t err)
 {
 	LWIP_UNUSED_ARG(arg);
 	LWIP_UNUSED_ARG(err);
-
-	tcp_setprio(pcb, TCP_PRIO_MIN);
-
-	//RepRapNetworkMessage("conn_accept\n");
 
 	/* Allocate a new ConnectionState for this connection */
 	ConnectionState *cs = reprap.GetNetwork()->ConnectionAccepted(pcb);
@@ -297,9 +321,8 @@ static err_t conn_accept(void *arg, tcp_pcb *pcb, err_t err)
 			break;
 	}
 	tcp_arg(pcb, cs);			// tell LWIP that this is the structure we wish to be passed for our callbacks
-	tcp_recv(pcb, conn_recv);	// tell LWIP that we wish to be informed of incoming data by a call to the conn_recv() function
+	tcp_recv(pcb, conn_recv);	// tell LWIP that we wish to be informed of incoming data by a willcall to the conn_recv() function
 	tcp_err(pcb, conn_err);
-	tcp_poll(pcb, conn_poll, 4);
 
 	return ERR_OK;
 }
@@ -387,27 +410,21 @@ void Network::Spin()
 		return;
 	}
 
-	if (state == NetworkActive)
+	if (state == NetworkActive && hasLink)
 	{
 		// See if we can read any packets
 		if (readingData)
 		{
-			do {
-				// read all queued packets from the RX buffer
-			} while (ethernet_read());
-
-			if (ethernet_is_ready())
-			{
-				readingData = false;
-				ethernet_set_rx_callback(&emac_read_packet);
-			}
+			ethernet_task();
+			readingData = false;
+			ethernet_set_rx_callback(&ethernet_rx_callback);
 		}
 
 		// See if we can send anything
 		NetworkTransaction *r = writingTransactions;
-		if (r != nullptr)
+		if (r != nullptr && sendingConnection == nullptr)
 		{
-			if (sendingTransaction == nullptr && r->next != nullptr)
+			if (r->next != nullptr)
 			{
 				// Data is supposed to be sent to another connection and the last packet has
 				// been acknowledged. Rotate the sending transactions so every client is
@@ -438,10 +455,10 @@ void Network::Spin()
 			}
 		}
 	}
-	else if (state == NetworkPostInitializing && establish_ethernet_link())
+	else if (state == NetworkPostInitializing && ethernet_establish_link())
 	{
-		start_ethernet(platform->IPAddress(), platform->NetMask(), platform->GateWay());
-		ethernet_set_rx_callback(&emac_read_packet);
+		start_ethernet(platform->IPAddress(), platform->NetMask(), platform->GateWay(), &ethernet_status_callback);
+		ethernet_set_rx_callback(&ethernet_rx_callback);
 
 		httpd_init();
 		ftpd_init();
@@ -451,7 +468,7 @@ void Network::Spin()
 		mdns_responder_init(mdns_services, ARRAY_SIZE(mdns_services), mdns_txt_records);
 		mdns_announce(); // NB: Wireless bridges like the TP-Link WR702N don't route incoming IGMP packets, so send an mDNS announcement as a fall-back option
 
-		state = NetworkActive;
+		state = isEnabled ? NetworkActive : NetworkInactive;
 	}
 
 	UnlockLWIP();
@@ -460,7 +477,7 @@ void Network::Spin()
 
 void Network::Interrupt()
 {
-	if (isEnabled && LockLWIP())
+	if (isEnabled && state == NetworkActive && LockLWIP())
 	{
 		ethernet_timers_update();
 		UnlockLWIP();
@@ -512,6 +529,7 @@ void Network::Enable()
 		readingData = true;
 		isEnabled = true;
 		// EMAC RX callback will be reset on next Spin calls
+
 		if (state == NetworkInactive)
 		{
 			state = NetworkActive;
@@ -563,23 +581,6 @@ void Network::SetHttpPort(uint16_t port)
 	httpPort = port;
 }
 
-void Network::SentPacketAcknowledged(ConnectionState *cs, unsigned int len)
-{
-	if (cs != nullptr && sendingTransaction != nullptr && cs == sendingTransaction->GetConnection())
-	{
-		if (sentDataOutstanding > len)
-		{
-			sentDataOutstanding -= len;
-		}
-		else
-		{
-			sendingTransaction = nullptr;
-			sentDataOutstanding = 0;
-		}
-	}
-//	debugPrintf("Network SentPacketAcknowledged: invalid cs=%08x\n", (unsigned int)cs);
-}
-
 // This is called when a connection is being established and returns an initialised ConnectionState instance.
 ConnectionState *Network::ConnectionAccepted(tcp_pcb *pcb)
 {
@@ -610,7 +611,7 @@ ConnectionState *Network::ConnectionAccepted(tcp_pcb *pcb)
 // This is called when a connection is being closed or has gone down unexpectedly
 void Network::ConnectionClosed(ConnectionState* cs, bool closeConnection)
 {
-	// make sure these connections are not reused
+	// Make sure these connections are not reused. Remove all references to it
 	if (cs == dataCs)
 	{
 		dataCs = nullptr;
@@ -623,18 +624,24 @@ void Network::ConnectionClosed(ConnectionState* cs, bool closeConnection)
 	{
 		telnetCs = nullptr;
 	}
+	if (cs == sendingConnection)
+	{
+		sendingConnection = nullptr;
+	}
 
-	// inform the Webserver that we are about to remove an existing connection
+	// Inform the Webserver that we are about to remove an existing connection
+	reprap.GetWebserver()->ConnectionLost(cs);
+
+	// Close it if requested
 	tcp_pcb *pcb = cs->pcb;
 	if (pcb != nullptr)
 	{
-		reprap.GetWebserver()->ConnectionLost(cs);
 		if (closeConnection)
 		{
 			tcp_arg(pcb, nullptr);
 			tcp_sent(pcb, nullptr);
 			tcp_recv(pcb, nullptr);
-			tcp_poll(pcb, nullptr, 4);
+			tcp_poll(pcb, nullptr, TCP_WRITE_TIMEOUT / TCP_SLOW_INTERVAL / TCP_MAX_SEND_RETRIES);
 			tcp_close(pcb);
 			cs->pcb = nullptr;
 		}
@@ -661,18 +668,19 @@ void Network::ConnectionClosed(ConnectionState* cs, bool closeConnection)
 }
 
 // This enqueues a new transaction to indicate a graceful reset. Do this to keep the time line of incoming transactions valid
-void Network::ConnectionClosedGracefully(ConnectionState *cs)
+bool Network::ConnectionClosedGracefully(ConnectionState *cs)
 {
 	NetworkTransaction* r = freeTransactions;
 	if (r == nullptr)
 	{
 		platform->Message(HOST_MESSAGE, "Network::ConnectionClosedGracefully() - no free transactions!\n");
-		return;
+		return false;
 	}
+
 	freeTransactions = r->next;
 	r->Set(nullptr, cs, disconnected);
-
 	AppendTransaction(&readyTransactions, r);
+	return true;
 }
 
 bool Network::Lock()
@@ -695,13 +703,13 @@ void Network::ReadPacket()
 	readingData = true;
 }
 
-void Network::ReceiveInput(pbuf *pb, ConnectionState* cs)
+bool Network::ReceiveInput(pbuf *pb, ConnectionState* cs)
 {
 	NetworkTransaction* r = freeTransactions;
 	if (r == nullptr)
 	{
 		platform->Message(HOST_MESSAGE, "Network::ReceiveInput() - no free transactions!\n");
-		return;
+		return false;
 	}
 
 	freeTransactions = r->next;
@@ -709,6 +717,7 @@ void Network::ReceiveInput(pbuf *pb, ConnectionState* cs)
 
 	AppendTransaction(&readyTransactions, r);
 //	debugPrintf("Network - input received\n");
+	return true;
 }
 
 // This is called by the web server to get a new received packet.
@@ -778,11 +787,10 @@ void Network::WaitForDataConection()
 
 const uint8_t *Network::IPAddress() const
 {
-	return reinterpret_cast<const uint8_t*>(&ethernet_get_configuration()->ip_addr.addr);
+	return ethernet_get_ipaddress();
 }
 
-void Network::SetIPAddress(const uint8_t ipAddress[], const uint8_t netmask[],
-		const uint8_t gateway[])
+void Network::SetIPAddress(const uint8_t ipAddress[], const uint8_t netmask[], const uint8_t gateway[])
 {
 	if (state == NetworkActive)
 	{
@@ -894,7 +902,8 @@ bool Network::AcquireTransaction(ConnectionState *cs)
 	}
 
 	// See if we're already writing on this connection
-	NetworkTransaction *lastTransaction = cs->sendingTransaction;
+	NetworkTransaction *firstTransaction = cs->sendingTransaction;
+	NetworkTransaction *lastTransaction = firstTransaction;
 	if (lastTransaction != nullptr)
 	{
 		while (lastTransaction->nextWrite != nullptr)
@@ -905,7 +914,7 @@ bool Network::AcquireTransaction(ConnectionState *cs)
 
 	// Then check if this transaction is valid and safe to use
 	NetworkTransaction *transactionToUse;
-	if (lastTransaction != nullptr && sendingTransaction != lastTransaction && lastTransaction->fileBeingSent == nullptr)
+	if (firstTransaction != nullptr && firstTransaction != lastTransaction && lastTransaction->fileBeingSent == nullptr)
 	{
 		transactionToUse = lastTransaction;
 	}
@@ -968,24 +977,12 @@ void Network::SetHostname(const char *name)
 void ConnectionState::Init(tcp_pcb *p)
 {
 	pcb = p;
+	localPort = p->local_port;
+	remoteIPAddress = p->remote_ip.addr;
+	remotePort = p->remote_port;
 	next = nullptr;
 	sendingTransaction = nullptr;
 	persistConnection = true;
-}
-
-uint16_t ConnectionState::GetLocalPort() const
-{
-	return pcb->local_port;
-}
-
-uint32_t ConnectionState::GetRemoteIP() const
-{
-	return pcb->remote_ip.addr;
-}
-
-uint16_t ConnectionState::GetRemotePort() const
-{
-	return pcb->remote_port;
 }
 
 //***************************************************************************************************
@@ -1008,7 +1005,6 @@ void NetworkTransaction::Set(pbuf *p, ConnectionState *c, TransactionStatus s)
 	fileBeingSent = nullptr;
 	closeRequested = false;
 	nextWrite = nullptr;
-	lastWriteTime = NAN;
 	waitingForDataConnection = false;
 }
 
@@ -1185,34 +1181,7 @@ bool NetworkTransaction::Send()
 
 			closingDataPort = false;
 		}
-
-		sendingTransaction = nullptr;
-		sentDataOutstanding = 0;
-
 		return true;
-	}
-
-	// We're still waiting for data to be ACK'ed, so check timeouts here
-	if (sentDataOutstanding > 0)
-	{
-		if (!isnan(lastWriteTime))
-		{
-			float timeNow = reprap.GetPlatform()->Time();
-			if (timeNow - lastWriteTime > TCP_WRITE_TIMEOUT)
-			{
-				if (reprap.Debug(moduleNetwork))
-				{
-					reprap.GetPlatform()->MessageF(HOST_MESSAGE, "Network: Timing out connection cs=%08x\n", (unsigned int)cs);
-				}
-				tcp_abort(cs->pcb);
-				cs->pcb = nullptr;
-			}
-			return false;
-		}
-	}
-	else
-	{
-		sendingTransaction = nullptr;
 	}
 
 	// Do we have enough space left for sending? Third-party apps may be sending data as well, so check this first
@@ -1281,29 +1250,26 @@ bool NetworkTransaction::Send()
 
 	// The TCP window has been filled up as much as possible, so send it now. There is no need to check
 	// the available space in the SNDBUF queue, because we really write only one TCP window at once.
-	tcp_sent(cs->pcb, conn_sent);
 	err_t result = tcp_write(cs->pcb, sendingWindow(), bytesBeingSent, 0);
-	if (result != ERR_OK)
+	if (result == ERR_OK)
 	{
-		reprap.GetPlatform()->MessageF(HOST_MESSAGE, "Network: tcp_write returned error code %d\n", result);
+		result = tcp_output(cs->pcb);
+	}
+
+	if (ERR_IS_FATAL(result))
+	{
+		reprap.GetPlatform()->MessageF(HOST_MESSAGE, "Network: Failed to write data in Send (code %d)\n", result);
 		tcp_abort(cs->pcb);
 		cs->pcb = nullptr;
+		return false;
 	}
-	else
-	{
-		sendingTransaction = this;
-		sendingRetries = 0;
-		sendingWindowSize = sentDataOutstanding = bytesBeingSent;
-		lastWriteTime = reprap.GetPlatform()->Time();
 
-		result = tcp_output(cs->pcb);
-		if (result != ERR_OK)
-		{
-			reprap.GetPlatform()->MessageF(HOST_MESSAGE, "Network: tcp_output returned error code %d\n", result);
-			tcp_abort(cs->pcb);
-			cs->pcb = nullptr;
-		}
-	}
+	tcp_poll(cs->pcb, conn_poll, TCP_WRITE_TIMEOUT / TCP_SLOW_INTERVAL / TCP_MAX_SEND_RETRIES);
+	tcp_sent(cs->pcb, conn_sent);
+
+	sendingConnection = cs;
+	sendingRetries = 0;
+	sendingWindowSize = sentDataOutstanding = bytesBeingSent;
 	return false;
 }
 
@@ -1361,7 +1327,7 @@ void NetworkTransaction::Defer()
 	FreePbuf();
 
 	// Call LWIP task to process tcp_recved(). This will hopefully send an ACK
-	while (ethernet_read());
+	ethernet_task();
 }
 
 // This method should be called if we don't want to send data to the client and if
@@ -1432,7 +1398,6 @@ uint16_t NetworkTransaction::GetLocalPort() const
 void NetworkTransaction::Close()
 {
 	tcp_pcb *pcb = cs->pcb;
-	tcp_poll(pcb, nullptr, 4);
 	tcp_recv(pcb, nullptr);
 	closeRequested = true;
 }
