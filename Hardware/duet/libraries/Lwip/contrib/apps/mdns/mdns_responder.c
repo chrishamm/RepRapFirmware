@@ -48,7 +48,7 @@
 #include <lwip/src/include/lwip/mem.h>
 
 #ifndef MDNS_DEBUG
-#define MDNS_DEBUG LWIP_DBG_OFF
+#define MDNS_DEBUG LWIP_DBG_ON
 #endif
 
 #ifndef MDNS_PORT

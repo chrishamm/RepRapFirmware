@@ -1,4 +1,4 @@
-Custom hardware tree for the Duet platform (version 1.0.9)
+Custom hardware tree for the Duet platform (version 1.1.0)
 
 
 This device tree is based on the official "Arduino Due" 1.6.5 platform files, however the following changes have been made:

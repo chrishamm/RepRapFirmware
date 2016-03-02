@@ -224,7 +224,7 @@ void ethernet_hardware_init(void)
 	emac_options_t emac_option;
 
 	/* Fill in EMAC options */
-	emac_option.uc_copy_all_frame = 0;
+	emac_option.uc_copy_all_frame = 1;
 	emac_option.uc_no_boardcast = 0;
 
 	memcpy(emac_option.uc_mac_addr, gs_uc_mac_address, sizeof(gs_uc_mac_address));
