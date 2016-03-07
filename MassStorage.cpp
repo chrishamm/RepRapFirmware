@@ -24,7 +24,7 @@ void MassStorage::Init()
 		}
 		else
 		{
-			abort = (err == SD_MMC_ERR_NO_CARD && platform->Time() > 5.0);
+			abort = (err == SD_MMC_ERR_NO_CARD && millis() > 5000);
 		}
 
 		if (abort)

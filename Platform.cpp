@@ -134,13 +134,15 @@ Platform::Platform() :
 
 void Platform::Init()
 {
-	// Deal with power first
+	// Deal with power and board type first
+
 	digitalWrite(ATX_POWER_PIN, LOW);			// ensure ATX power is off by default
 	pinMode(ATX_POWER_PIN, OUTPUT);
 
 	SetBoardType(BoardType::Auto);
 
 	// Comms
+
 	baudRates[0] = MAIN_BAUD_RATE;
 	baudRates[1] = AUX_BAUD_RATE;
 	baudRates[2] = AUX2_BAUD_RATE;
@@ -153,32 +155,33 @@ void Platform::Init()
 	SERIAL_AUX_DEVICE.begin(baudRates[1]);					// this can't be done in the constructor because the Arduino port initialisation isn't complete at that point
 	SERIAL_AUX2_DEVICE.begin(baudRates[2]);
 
-	static_assert(sizeof(FlashData) + sizeof(SoftwareResetData) <= 1024, "NVData too large");
+	// Flash memory
 
+	static_assert(sizeof(FlashData) + sizeof(SoftwareResetData) <= 1024, "NVData too large");
 	ResetNvData();
 
-	// We need to initialise at least some of the time stuff before we call MassStorage::Init()
-	addToTime = 0.0;
-	lastTimeCall = 0;
-	lastTime = Time();
-	longWait = lastTime;
-
 	// File management
+
 	massStorage->Init();
 
 	for(size_t file = 0; file < MAX_FILES; file++)
 	{
 		files[file]->Init();
 	}
-
 	fileStructureInitialised = true;
 
-	mcpDuet.begin(); //only call begin once in the entire execution, this begins the I2C comms on that channel for all objects
-	mcpExpansion.setMCP4461Address(0x2E); //not required for mcpDuet, as this uses the default address
+	// Files and Directories
+
 	configFile = CONFIG_FILE;
 	defaultFile = DEFAULT_FILE;
 
-	// DRIVES
+	gcodeDir = GCODE_DIR;
+	macroDir = MACRO_DIR;
+	sysDir = SYS_DIR;
+	webDir = WEB_DIR;
+
+	// Drives
+
 	ARRAY_INIT(stepPins, STEP_PINS);
 	ARRAY_INIT(directionPins, DIRECTION_PINS);
 	ARRAY_INIT(directions, DIRECTIONS);
@@ -195,37 +198,8 @@ void Platform::Init()
 	maxStepperDigipotVoltage = MAX_STEPPER_DIGIPOT_VOLTAGE;
 	maxStepperDACVoltage = MAX_STEPPER_DAC_VOLTAGE;
 
-	// Z PROBE
-
-	zProbePin = Z_PROBE_PIN;
-	zProbeAdcChannel = PinToAdcChannel(zProbePin);
-	InitZProbe();		// this also sets up zProbeModulationPin
-
-	// AXES
-
-	ARRAY_INIT(axisMaxima, AXIS_MAXIMA);
-	ARRAY_INIT(axisMinima, AXIS_MINIMA);
-
-	idleCurrentFactor = DEFAULT_IDLE_CURRENT_FACTOR;
-	SetSlowestDrive();
-
-	// HEATERS - Bed is assumed to be the first
-
-	ARRAY_INIT(tempSensePins, TEMP_SENSE_PINS);
-	ARRAY_INIT(heatOnPins, HEAT_ON_PINS);
-	ARRAY_INIT(max31855CsPins, MAX31855_CS_PINS);
-	ARRAY_INIT(standbyTemperatures, STANDBY_TEMPERATURES);
-	ARRAY_INIT(activeTemperatures, ACTIVE_TEMPERATURES);
-
-	heatSampleTime = HEAT_SAMPLE_TIME;
-	timeToHot = TIME_TO_HOT;
-
-	// Directories
-
-	gcodeDir = GCODE_DIR;
-	macroDir = MACRO_DIR;
-	sysDir = SYS_DIR;
-	webDir = WEB_DIR;
+	mcpDuet.begin();						// only call begin once in the entire execution, this begins the I2C comms on that channel for all objects
+	mcpExpansion.setMCP4461Address(0x2E);	// not required for mcpDuet, as this uses the default address
 
 	// Motors
 
@@ -263,16 +237,44 @@ void Platform::Init()
 
 	extrusionAncilliaryPWM = 0.0;
 
+	// Axes
+
+	ARRAY_INIT(axisMaxima, AXIS_MAXIMA);
+	ARRAY_INIT(axisMinima, AXIS_MINIMA);
+
+	idleCurrentFactor = DEFAULT_IDLE_CURRENT_FACTOR;
+	SetSlowestDrive();
+
+	// ADC
+
+	analogReadResolution(12);
+
+	// Z-Probe
+
+	zProbePin = Z_PROBE_PIN;
+	zProbeAdcChannel = PinToAdcChannel(zProbePin);
+	InitZProbe();		// this also sets up zProbeModulationPin
+
+	// Heaters
+
+	ARRAY_INIT(tempSensePins, TEMP_SENSE_PINS);
+	ARRAY_INIT(heatOnPins, HEAT_ON_PINS);
+	ARRAY_INIT(max31855CsPins, MAX31855_CS_PINS);
+
+	configuredHeaters = (BED_HEATER >= 0) ? (1 << BED_HEATER) : 0;
+	heatSampleTime = HEAT_SAMPLE_TIME;
+	timeToHot = TIME_TO_HOT;
+
 	for(size_t heater = 0; heater < HEATERS; heater++)
 	{
 		if (heatOnPins[heater] >= 0)
 		{
-			digitalWrite(heatOnPins[heater], HIGH);	// turn the heater off
 			pinMode(heatOnPins[heater], OUTPUT);
+			SetHeater(heater, 0.0);					// turn the heater off
 		}
-		analogReadResolution(12);
+
 		thermistorAdcChannels[heater] = PinToAdcChannel(tempSensePins[heater]);	// Translate the Arduino Due Analog pin number to the SAM ADC channel number
-		SetThermistorNumber(heater, heater);				// map the thermistor straight through
+		SetThermistorNumber(heater, heater);									// map the thermistor straight through
 		thermistorFilters[heater].Init(analogRead(tempSensePins[heater]));
 
 		// Calculate and store the ADC average sum that corresponds to an overheat condition, so that we can check is quickly in the tick ISR
@@ -283,9 +285,12 @@ void Platform::Init()
 		thermistorOverheatSums[heater] = (uint32_t) (thermistorOverheatAdcValue + 0.9) * THERMISTOR_AVERAGE_READINGS;
 	}
 
+	// Fans
+
 	InitFans();
 
-	// Hotend configuration
+	// Nozzle and filament configuration
+
 	nozzleDiameter = NOZZLE_DIAMETER;
 	filamentWidth = FILAMENT_WIDTH;
 
@@ -993,7 +998,7 @@ void TC3_Handler()
 	++numInterruptsExecuted;
 	lastInterruptTime = Platform::GetInterruptClocks();
 #endif
-	reprap.Interrupt();
+	reprap.GetMove()->Interrupt();
 }
 
 void TC4_Handler()
@@ -1267,12 +1272,12 @@ float Platform::GetTemperature(size_t heater, TempError* err) const
 		if (err)
 		{
 			switch(res) {
-			case MAX31855_OK      : *err = TempError::errOk; break;			// Success
-			case MAX31855_ERR_SCV : *err = TempError::errShortVcc; break;	// Short to Vcc
-			case MAX31855_ERR_SCG : *err = TempError::errShortGnd; break;	// Short to GND
-			case MAX31855_ERR_OC  : *err = TempError::errOpen; break;		// Open connection
-			case MAX31855_ERR_TMO : *err = TempError::errTimeout; break;	// SPI comms timeout
-			case MAX31855_ERR_IO  : *err = TempError::errIO; break;			// SPI comms not functioning
+				case MAX31855_OK      : *err = TempError::errOk; break;			// Success
+				case MAX31855_ERR_SCV : *err = TempError::errShortVcc; break;	// Short to Vcc
+				case MAX31855_ERR_SCG : *err = TempError::errShortGnd; break;	// Short to GND
+				case MAX31855_ERR_OC  : *err = TempError::errOpen; break;		// Open connection
+				case MAX31855_ERR_TMO : *err = TempError::errTimeout; break;	// SPI comms timeout
+				case MAX31855_ERR_IO  : *err = TempError::errIO; break;			// SPI comms not functioning
 			}
 		}
 		return BAD_ERROR_TEMPERATURE;
@@ -1283,21 +1288,21 @@ float Platform::GetTemperature(size_t heater, TempError* err) const
 {
 	switch(err)
 	{
-	default : return "Unknown temperature read error";
-	case TempError::errOk : return "successful temperature read";
-	case TempError::errShort : return "sensor circuit is shorted";
-	case TempError::errShortVcc : return "sensor circuit is shorted to the voltage rail";
-	case TempError::errShortGnd : return "sensor circuit is shorted to ground";
-	case TempError::errOpen : return "sensor circuit is open/disconnected";
-	case TempError::errTimeout : return "communication error whilst reading sensor; read took too long";
-	case TempError::errIO: return "communication error whilst reading sensor; check sensor connections";
+		default : return "Unknown temperature read error";
+		case TempError::errOk : return "successful temperature read";
+		case TempError::errShort : return "sensor circuit is shorted";
+		case TempError::errShortVcc : return "sensor circuit is shorted to the voltage rail";
+		case TempError::errShortGnd : return "sensor circuit is shorted to ground";
+		case TempError::errOpen : return "sensor circuit is open/disconnected";
+		case TempError::errTimeout : return "communication error whilst reading sensor; read took too long";
+		case TempError::errIO: return "communication error whilst reading sensor; check sensor connections";
 	}
 }
 
 // See if we need to turn on the hot end fan
 bool Platform::AnyHeaterHot(uint16_t heaters, float t) const
 {
-	for (size_t h = 0; h < reprap.GetHeatersInUse(); ++h)
+	for (size_t h = 0; h < reprap.GetToolHeatersInUse(); ++h)
 	{
 		if (((1 << h) & heaters) != 0)
 		{
@@ -1338,6 +1343,15 @@ void Platform::SetHeater(size_t heater, float power)
 	SetHeaterPwm(heater, (uint8_t)(255.0 * min<float>(1.0, max<float>(0.0, power))));
 }
 
+void Platform::SetHeaterPwm(size_t heater, uint8_t power)
+{
+	if (heatOnPins[heater] >= 0)
+	{
+		uint16_t freq = (reprap.GetHeat()->UseSlowPwm(heater)) ? SLOW_HEATER_PWM_FREQUENCY : NORMAL_HEATER_PWM_FREQUENCY;
+		analogWriteDuet(heatOnPins[heater], (HEAT_ON == 0) ? 255 - power : power, freq);
+	}
+}
+
 void Platform::UpdateMaxHeaterTemperature()
 {
 	for(size_t heater = 0; heater < HEATERS; heater++)
@@ -1350,13 +1364,35 @@ void Platform::UpdateMaxHeaterTemperature()
 	}
 }
 
-void Platform::SetHeaterPwm(size_t heater, uint8_t power)
+void Platform::UpdateConfiguredHeaters()
 {
-	if (heatOnPins[heater] >= 0)
+	cpu_irq_disable();
+	configuredHeaters = 0;
+
+	// Check bed heater
+	const int8_t bedHeater = reprap.GetHeat()->GetBedHeater();
+	if (bedHeater >= 0)
 	{
-		uint16_t freq = (reprap.GetHeat()->UseSlowPwm(heater)) ? SLOW_HEATER_PWM_FREQUENCY : NORMAL_HEATER_PWM_FREQUENCY;
-		analogWriteDuet(heatOnPins[heater], (HEAT_ON == 0) ? 255 - power : power, freq);
+		configuredHeaters |= (1 << bedHeater);
 	}
+
+	// Check chamber heater
+	const int8_t chamberHeater = reprap.GetHeat()->GetChamberHeater();
+	if (chamberHeater >= 0)
+	{
+		configuredHeaters |= (1 << chamberHeater);
+	}
+
+	// Check tool heaters
+	for(size_t heater = 0; heater < HEATERS; heater++)
+	{
+		if (reprap.IsHeaterAssignedToTool(heater))
+		{
+			configuredHeaters |= (1 << heater);
+		}
+	}
+
+	cpu_irq_enable();
 }
 
 EndStopHit Platform::Stopped(size_t drive) const
@@ -2233,7 +2269,7 @@ void Platform::Tick()
 				ThermistorAveragingFilter& currentFilter = const_cast<ThermistorAveragingFilter&>(thermistorFilters[currentHeater]);
 				currentFilter.ProcessReading(GetAdcReading(thermistorAdcChannels[heaterTempChannels[currentHeater]]));
 				StartAdcConversion(zProbeAdcChannel);
-				if (currentFilter.IsValid())
+				if (currentFilter.IsValid() && (configuredHeaters & (1 << currentHeater)) != 0)
 				{
 					uint32_t sum = currentFilter.GetSum();
 					if (sum < thermistorOverheatSums[currentHeater] || sum >= AD_DISCONNECTED_REAL * THERMISTOR_AVERAGE_READINGS)
@@ -2260,7 +2296,7 @@ void Platform::Tick()
 			}
 
 			++currentHeater;
-			if (currentHeater >= reprap.GetHeatersInUse())
+			if (currentHeater == HEATERS)
 			{
 				currentHeater = 0;
 			}

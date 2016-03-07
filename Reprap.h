@@ -37,7 +37,6 @@ class RepRap
 		void Init();
 		void Spin();
 		void Exit();
-		void Interrupt();
 		void Diagnostics();
 		void Timing();
 
@@ -84,7 +83,7 @@ class RepRap
 		bool IsStopped() const;
 
 		uint16_t GetExtrudersInUse() const;
-		uint16_t GetHeatersInUse() const;
+		uint16_t GetToolHeatersInUse() const;
 
 		OutputBuffer *GetStatusResponse(uint8_t type, ResponseSource source);
 		OutputBuffer *GetConfigResponse();
@@ -114,7 +113,7 @@ class RepRap
 		float lastToolWarningTime;
 
 		uint16_t activeExtruders;
-		uint16_t activeHeaters;
+		uint16_t activeToolHeaters;
 
 		uint16_t ticksInSpinState;
 		Module spinningModule;
@@ -148,7 +147,7 @@ inline Module RepRap::GetSpinningModule() const { return spinningModule; }
 
 inline Tool* RepRap::GetCurrentTool() const { return currentTool; }
 inline uint16_t RepRap::GetExtrudersInUse() const { return activeExtruders; }
-inline uint16_t RepRap::GetHeatersInUse() const { return activeHeaters; }
+inline uint16_t RepRap::GetToolHeatersInUse() const { return activeToolHeaters; }
 
 inline void RepRap::FlagTemperatureFault(int8_t dudHeater)
 {
@@ -167,7 +166,6 @@ inline void RepRap::ClearTemperatureFault(int8_t wasDudHeater)
 	}
 }
 
-inline void RepRap::Interrupt() { move->Interrupt(); }
 inline bool RepRap::IsStopped() const { return stopped; }
 inline uint16_t RepRap::GetTicksInSpinState() const { return ticksInSpinState; }
 

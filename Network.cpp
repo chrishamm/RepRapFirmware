@@ -629,23 +629,20 @@ void Network::ConnectionClosed(ConnectionState* cs, bool closeConnection)
 		sendingConnection = nullptr;
 	}
 
-	// Inform the Webserver that we are about to remove an existing connection
-	reprap.GetWebserver()->ConnectionLost(cs);
-
 	// Close it if requested
 	tcp_pcb *pcb = cs->pcb;
-	if (pcb != nullptr)
+	if (pcb != nullptr && closeConnection)
 	{
-		if (closeConnection)
-		{
-			tcp_arg(pcb, nullptr);
-			tcp_sent(pcb, nullptr);
-			tcp_recv(pcb, nullptr);
-			tcp_poll(pcb, nullptr, TCP_WRITE_TIMEOUT / TCP_SLOW_INTERVAL / TCP_MAX_SEND_RETRIES);
-			tcp_close(pcb);
-			cs->pcb = nullptr;
-		}
+		tcp_arg(pcb, nullptr);
+		tcp_sent(pcb, nullptr);
+		tcp_recv(pcb, nullptr);
+		tcp_poll(pcb, nullptr, TCP_WRITE_TIMEOUT / TCP_SLOW_INTERVAL / TCP_MAX_SEND_RETRIES);
+		tcp_close(pcb);
 	}
+	cs->pcb = nullptr;
+
+	// Inform the Webserver that we are about to remove an existing connection
+	reprap.GetWebserver()->ConnectionLost(cs);
 
 	// cs points to a connection state block that the caller is about to release, so we need to stop referring to it.
 	// There may be one NetworkTransaction in the writing or closing list referring to it, and possibly more than one in the ready list.

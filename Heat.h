@@ -112,7 +112,6 @@ class Heat
 		void SwitchOff(int8_t heater);								// Turn off a specific heater
 		void SwitchOffAll();										// Turn all heaters off
 		void ResetFault(int8_t heater);								// Reset a heater fault - only call this if you know what you are doing
-		bool AnyHeaterActive() const;								// Is any heater (including bed) active?
 		bool AllHeatersAtSetTemperatures(bool includingBed) const;	// Is everything at temperature within tolerance?
 		bool HeaterAtSetTemperature(int8_t heater) const;			// Is a specific heater at temperature within tolerance?
 		void Diagnostics();											// Output useful information
@@ -261,19 +260,9 @@ inline int8_t Heat::GetBedHeater() const
 	return bedHeater;
 }
 
-inline void Heat::SetBedHeater(int8_t heater)
-{
-	bedHeater = heater;
-}
-
 inline int8_t Heat::GetChamberHeater() const
 {
 	return chamberHeater;
-}
-
-inline void Heat::SetChamberHeater(int8_t heater)
-{
-	chamberHeater = heater;
 }
 
 inline Heat::HeaterStatus Heat::GetStatus(int8_t heater) const

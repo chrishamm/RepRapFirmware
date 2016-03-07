@@ -20,7 +20,7 @@ Licence: GPL
 #include "RepRapFirmware.h"
 
 PrintMonitor::PrintMonitor(Platform *p, GCodes *gc) : platform(p), gCodes(gc), isPrinting(false),
-	printStartTime(0), pauseStartTime(0.0), totalPauseTime(0.0), currentLayer(0), warmUpDuration(0.0),
+	printStartTime(0), pauseStartTime(0.0), totalPauseTime(0.0), heatingUp(false), currentLayer(0), warmUpDuration(0.0),
 	firstLayerDuration(0.0), firstLayerFilament(0.0), firstLayerProgress(0.0), lastLayerChangeTime(0.0),
 	lastLayerFilament(0.0), lastLayerZ(0.0), numLayerSamples(0), layerEstimatedTimeLeft(0.0), parseState(notParsing),
 	fileBeingParsed(nullptr), fileOverlapLength(0), printingFileParsed(false), accumulatedParseTime(0.0),
@@ -73,18 +73,24 @@ void PrintMonitor::Spin()
 		// Have we just started a print? See if we're heating up
 		if (currentLayer == 0)
 		{
-			// Check if at least one nozzle heater is active and set
+			// Check if there are any active heaters
 			bool nozzleAtHighTemperature = false;
-			int firstHeater = (reprap.GetHeat()->GetBedHeater() == -1) ? E0_HEATER : BED_HEATER;
-			for(int heater = E0_HEATER; heater < HEATERS; heater++)
+			for(int heater = 0; heater < HEATERS; heater++)
 			{
-				if (reprap.GetHeat()->GetChamberHeater() != heater &&
-					reprap.GetHeat()->GetStatus(heater) == Heat::HS_active &&
-					reprap.GetHeat()->GetActiveTemperature(heater) > TEMPERATURE_LOW_SO_DONT_CARE &&
-					reprap.GetHeat()->HeaterAtSetTemperature(heater))
+				if (reprap.GetHeat()->GetStatus(heater) == Heat::HS_active && reprap.GetHeat()->GetActiveTemperature(heater) > TEMPERATURE_LOW_SO_DONT_CARE)
 				{
-					nozzleAtHighTemperature = true;
-					break;
+					heatingUp = true;
+
+					// Check if this heater is assigned to a tool and if it has reached its set temperature yet
+					if (reprap.IsHeaterAssignedToTool(heater))
+					{
+						if (!reprap.GetHeat()->HeaterAtSetTemperature(heater))
+						{
+							nozzleAtHighTemperature = false;
+							break;
+						}
+						nozzleAtHighTemperature = true;
+					}
 				}
 			}
 
@@ -144,7 +150,7 @@ float PrintMonitor::GetWarmUpDuration() const
 	{
 		return warmUpDuration;
 	}
-	return reprap.GetHeat()->AnyHeaterActive() ? GetPrintDuration() : 0.0;
+	return heatingUp ? GetPrintDuration() : 0.0;
 }
 
 // Notifies this class that a file has been set for printing
@@ -165,6 +171,7 @@ void PrintMonitor::StartedPrint()
 // This is called as soon as the heaters are at temperature and the actual print has started
 void PrintMonitor::WarmUpComplete()
 {
+	heatingUp = false;
 	warmUpDuration = GetPrintDuration();
 }
 
@@ -222,39 +229,23 @@ void PrintMonitor::LayerComplete()
 	// Update layer-based estimation time (if the object and layer heights are known)
 	if (printingFileInfo.objectHeight > 0.0 && printingFileInfo.layerHeight > 0.0)
 	{
-		// Calculate the average layer time and a tendency for the collected layer samples
-		float avgLayerTime = 0.0, avgLayerDelta = 0.0;
-		if (numLayerSamples > 0)
+		// Calculate the average layer time and include the first layer if possible
+		float avgLayerTime = (numLayerSamples < MAX_LAYER_SAMPLES)
+								? firstLayerDuration * FIRST_LAYER_SPEED_FACTOR
+								: 0.0;
+		for(size_t layer = 0; layer < numLayerSamples; layer++)
 		{
-			for(size_t layer = 0; layer < numLayerSamples; layer++)
-			{
-				avgLayerTime += layerDurations[layer];
-				if (layer > 0)
-				{
-					avgLayerDelta += layerDurations[layer] - layerDurations[layer - 1];
-				}
-			}
-			avgLayerTime /= numLayerSamples;
-			avgLayerDelta /= numLayerSamples;
+			avgLayerTime += layerDurations[layer];
 		}
-		else
-		{
-			avgLayerTime = firstLayerDuration * FIRST_LAYER_SPEED_FACTOR;
-		}
+		avgLayerTime /= (numLayerSamples < MAX_LAYER_SAMPLES) ? numLayerSamples + 1 : numLayerSamples;
 
 		// Estimate the layer-based time left
-		unsigned int layersToPrint;
-		layersToPrint = round((printingFileInfo.objectHeight - printingFileInfo.firstLayerHeight) / printingFileInfo.layerHeight) + 1;
-		if (currentLayer < layersToPrint)
+		unsigned int totalLayers;
+		totalLayers = round((printingFileInfo.objectHeight - printingFileInfo.firstLayerHeight) / printingFileInfo.layerHeight) + 1;
+		if (currentLayer < totalLayers)
 		{
 			// Current layer is within reasonable boundaries, so an estimation can be made
-			unsigned int remainingLayers = layersToPrint - currentLayer;
-			layerEstimatedTimeLeft = (avgLayerTime * remainingLayers) - (avgLayerDelta * remainingLayers);
-			if (layerEstimatedTimeLeft < 0.0)
-			{
-				// Maintain a sensible estimation if the tendency was too optimistic
-				layerEstimatedTimeLeft = avgLayerTime * remainingLayers;
-			}
+			layerEstimatedTimeLeft = avgLayerTime * (totalLayers - currentLayer);
 		}
 		else
 		{
@@ -266,7 +257,7 @@ void PrintMonitor::LayerComplete()
 
 void PrintMonitor::StoppedPrint()
 {
-	isPrinting = printingFileParsed = false;
+	isPrinting = heatingUp = printingFileParsed = false;
 	currentLayer = numLayerSamples = 0;
 	pauseStartTime = totalPauseTime = 0.0;
 	firstLayerDuration = firstLayerFilament = firstLayerProgress = 0.0;
@@ -722,42 +713,55 @@ float PrintMonitor::EstimateTimeLeft(PrintEstimationMethod method) const
 
 	// How long have we been printing continuously?
 	float realPrintDuration = GetPrintDuration() - warmUpDuration;
-	if (numLayerSamples != 0)
-	{
-		// Take into account the first layer time only if we haven't got any other samples
-		realPrintDuration -= firstLayerDuration;
-	}
 
-	// Actual estimations
 	switch (method)
 	{
 		case fileBased:
 		{
-			// Provide rough estimation only if we haven't collected any layer samples (yet)
+			// Can we provide an estimation at all?
 			const float fractionPrinted = gCodes->FractionOfFilePrinted();
-			if (numLayerSamples == 0 || !printingFileParsed || printingFileInfo.objectHeight == 0.0)
+			if (fractionPrinted < ESTIMATION_MIN_FILE_USAGE || heatingUp)
 			{
-				if (fractionPrinted == 1.0)
+				// No, we haven't printed enough of the file yet. We can't provide an estimation at this moment
+				return 0.0;
+			}
+			if (fractionPrinted == 1.0)
+			{
+				// No, but the file has been processed entirely. It won't take long until the print finishes
+				return 0.1;
+			}
+
+			// See how long it takes per progress
+			float duration, fractionPrintedInLayers;
+			if (numLayerSamples == 0)
+			{
+				duration = firstLayerDuration;
+				fractionPrintedInLayers = firstLayerProgress;
+			}
+			else if (numLayerSamples == 1)
+			{
+				duration = layerDurations[0];
+				fractionPrintedInLayers = fileProgressPerLayer[0] - firstLayerProgress;
+			}
+			else if (numLayerSamples > 1)
+			{
+				duration = 0.0;
+				for(size_t sample = 1; sample < numLayerSamples; sample++)
 				{
-					// File has been processed entirely, so it won't take long until the print finishes
-					return 0.1;
+					duration += layerDurations[sample];
 				}
-
-				const float estimatedTimeLeft = realPrintDuration * (1.0 / fractionPrinted) - realPrintDuration;
-				return (fractionPrinted < ESTIMATION_MIN_FILE_USAGE) ? 0.0 : max<float>(estimatedTimeLeft, 0.1);
+				fractionPrintedInLayers = fileProgressPerLayer[numLayerSamples - 1] - fileProgressPerLayer[0];
 			}
 
-			// Each layer takes time to achieve more file progress, so take an average over our samples
-			float avgSecondsByProgress = 0.0, lastLayerProgress = 0.0;
-			for(size_t layer = 0; layer < numLayerSamples; layer++)
+			// Can we use these values?
+			if (fractionPrintedInLayers < ESTIMATION_MIN_FILE_USAGE)
 			{
-				avgSecondsByProgress += layerDurations[layer] / (fileProgressPerLayer[layer] - lastLayerProgress);
-				lastLayerProgress = fileProgressPerLayer[layer];
+				// No - only provide a rough estimation
+				return max<float>(realPrintDuration * (1.0 / fractionPrinted) - realPrintDuration, 0.1);
 			}
-			avgSecondsByProgress /= numLayerSamples;
 
-			// Then we know how many seconds it takes to finish 1% and we know how much file progress is left
-			return avgSecondsByProgress * (1.0 - fractionPrinted);
+			// Yes...
+			return max<float>(duration * (1.0 - fractionPrinted) / fractionPrintedInLayers, 0.1);
 		}
 
 		case filamentBased:
@@ -781,28 +785,33 @@ float PrintMonitor::EstimateTimeLeft(PrintEstimationMethod method) const
 			// If we have a reasonable amount of filament extruded, calculate estimated times left
 			if (totalFilamentNeeded > 0.0 && extrRawTotal > totalFilamentNeeded * ESTIMATION_MIN_FILAMENT_USAGE)
 			{
-				if (firstLayerFilament == 0.0)
-				{
-					return realPrintDuration * (totalFilamentNeeded - extrRawTotal) / extrRawTotal;
-				}
+				// Do we have more total filament extruded than reported by the file
 				if (extrRawTotal >= totalFilamentNeeded)
 				{
-					return 0.1;		// Avoid division by zero, else the web interface will report AJAX errors
+					// Yes - assume the print has almost finished
+					return 0.1;
 				}
 
-				float filamentRate;
-				if (numLayerSamples)
+				// Get filament usage per layer
+				float filamentRate = 0.0;
+				if (numLayerSamples > 0)
 				{
-					filamentRate = 0.0;
 					for(size_t i = 0; i < numLayerSamples; i++)
 					{
 						filamentRate += filamentUsagePerLayer[i] / layerDurations[i];
 					}
 					filamentRate /= numLayerSamples;
 				}
-				else
+				else if (firstLayerDuration > 0.0)
 				{
 					filamentRate = firstLayerFilament / firstLayerDuration;
+				}
+
+				// Can we provide a good estimation?
+				if (filamentRate == 0.0)
+				{
+					// No - calculate time left based on the filament we have extruded so far
+					return realPrintDuration * (totalFilamentNeeded - extrRawTotal) / extrRawTotal;
 				}
 
 				return (totalFilamentNeeded - extrRawTotal) / filamentRate;
@@ -811,6 +820,7 @@ float PrintMonitor::EstimateTimeLeft(PrintEstimationMethod method) const
 		}
 
 		case layerBased:
+			// Layer-based estimations are made after each layer change, only reflect this value
 			if (layerEstimatedTimeLeft > 0.0)
 			{
 				float timeLeft = layerEstimatedTimeLeft - (GetPrintDuration() - lastLayerChangeTime);

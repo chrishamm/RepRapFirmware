@@ -87,19 +87,16 @@ void Heat::Diagnostics()
 	}
 }
 
-bool Heat::AnyHeaterActive() const
+void Heat::SetBedHeater(int8_t heater)
 {
-	size_t firstHeater = (bedHeater == -1) ? E0_HEATER : min<int8_t>(bedHeater, E0_HEATER);
-	for(size_t heater = firstHeater; heater < HEATERS; heater++)
-	{
-		const PID *pid = pids[heater];
-		float target = (pid->Active()) ? GetActiveTemperature(heater) : GetStandbyTemperature(heater);
-		if (!pid->SwitchedOff() && !pid->FaultOccurred() && target >= TEMPERATURE_LOW_SO_DONT_CARE)
-		{
-			return true;
-		}
-	}
-	return false;
+	bedHeater = heater;
+	reprap.GetPlatform()->UpdateConfiguredHeaters();
+}
+
+void Heat::SetChamberHeater(int8_t heater)
+{
+	chamberHeater = heater;
+	reprap.GetPlatform()->UpdateConfiguredHeaters();
 }
 
 bool Heat::AllHeatersAtSetTemperatures(bool includingBed) const

@@ -3519,10 +3519,10 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 							reply.catf(" B:%.1f", reprap.GetHeat()->GetTemperature(bedHeater));
 						}
 						
-						// Report current/target temperature for all heaters in use
+						// Report current/target temperature for all tool heaters in use
 						char ch = ' ';
 						float targetTemperature;
-						for(size_t heater = min<size_t>(bedHeater, E0_HEATER); heater < reprap.GetHeatersInUse(); heater++)
+						for(size_t heater = min<size_t>(bedHeater, E0_HEATER); heater < reprap.GetToolHeatersInUse(); heater++)
 						{
 							if (reprap.GetHeat()->GetStatus(heater) == Heat::HeaterStatus::HS_active)
 							{
@@ -5325,7 +5325,7 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			if (gb->Seen('P'))
 			{
 				int heater = gb->GetIValue();
-				if (heater > 0 && heater < HEATERS)
+				if (heater >= 0 && heater < HEATERS)
 				{
 					reprap.ClearTemperatureFault(heater);
 				}

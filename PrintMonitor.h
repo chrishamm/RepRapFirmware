@@ -29,7 +29,7 @@ const float LAYER_HEIGHT_TOLERANCE = 0.015;			// Tolerance for comparing two Z h
 
 const size_t MAX_LAYER_SAMPLES = 5;					// Number of layer samples for end-time estimation (except for first layer)
 const float ESTIMATION_MIN_FILAMENT_USAGE = 0.01;	// Minimum per cent of filament to be printed before the filament-based estimation returns values
-const float ESTIMATION_MIN_FILE_USAGE = 0.01;		// Minium per cent of the file to be processed before any file-based estimations are made
+const float ESTIMATION_MIN_FILE_USAGE = 0.001;		// Minium per cent of the file to be processed before any file-based estimations are made
 const float FIRST_LAYER_SPEED_FACTOR = 0.25;		// First layer speed factor compared to other layers (only for layer-based estimation)
 
 const uint32_t PRINTMONITOR_UPDATE_INTERVAL = 200;	// Update interval in milliseconds
@@ -104,6 +104,7 @@ class PrintMonitor
 		float printStartTime;
 		float pauseStartTime, totalPauseTime;
 
+		bool heatingUp;
 		unsigned int currentLayer;
 		float warmUpDuration, firstLayerDuration;
 		float firstLayerFilament, firstLayerProgress;

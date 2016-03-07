@@ -135,9 +135,6 @@ const float DEFAULT_PID_FULLBANDS[HEATERS] = HEATERS_( 5.0, 30.0, 30.0, 30.0, 30
 const float DEFAULT_PID_MINS[HEATERS] = HEATERS_( 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 );					// Minimum value of I-term
 const float DEFAULT_PID_MAXES[HEATERS] = HEATERS_( 255.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0 );	// Maximum value of I-term, must be high enough to reach 245C for ABS printing
 
-const float STANDBY_TEMPERATURES[HEATERS] = HEATERS_( ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO ); // We specify one for the bed, though it's not needed
-const float ACTIVE_TEMPERATURES[HEATERS] = HEATERS_( ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO, ABS_ZERO );
-
 const int8_t BED_HEATER = 0;					// Index of the heated bed
 const int8_t E0_HEATER = 1;						// Index of the first extruder heater
 const int8_t E1_HEATER = 2;						// Index of the second extruder heater
@@ -588,6 +585,7 @@ class Platform
 		static const char* TempErrorStr(TempError err);
 		static bool TempErrorPermanent(TempError err);
 		void UpdateMaxHeaterTemperature();
+		void UpdateConfiguredHeaters();
 
 		// Fans
 
@@ -773,9 +771,8 @@ class Platform
 		Pin tempSensePins[HEATERS];
 		Pin heatOnPins[HEATERS];
 		Pin max31855CsPins[MAX31855_DEVICES];
+		uint32_t configuredHeaters;										// Bitmask of all heaters in use
 		float heatSampleTime;
-		float standbyTemperatures[HEATERS];
-		float activeTemperatures[HEATERS];
 		float timeToHot;
 
 		// Fans
