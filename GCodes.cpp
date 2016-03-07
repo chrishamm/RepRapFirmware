@@ -5301,7 +5301,7 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			}
 
 			isFlashing = true;
-			if (!DoDwellTime(1.0))
+			if (!DoDwellTime(2.0))
 			{
 				// wait a second so all HTTP clients are notified
 				return false;

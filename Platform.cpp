@@ -114,8 +114,8 @@ bool PidParameters::operator==(const PidParameters& other) const
 /*static*/ const uint8_t Platform::pinAccessAllowed[NUM_PINS_ALLOWED/8] = PINS_ALLOWED;
 
 Platform::Platform() :
-		autoSaveEnabled(false), board(DEFAULT_BOARD_TYPE), active(false), errorCodeBits(0), fileStructureInitialised(false),
-		tickState(0), debugCode(0)
+		autoSaveEnabled(false), board(DEFAULT_BOARD_TYPE), lastTime(0.0), longWait(0.0), addToTime(0.0), lastTimeCall(0),
+		active(false), errorCodeBits(0), fileStructureInitialised(false), tickState(0), currentHeater(0), debugCode(0)
 {
 	// Output
 	auxOutput = new OutputStack();
@@ -1023,8 +1023,6 @@ void Platform::InitialiseInterrupts()
 {
 	// The SAM3X NVIC supports up to 16 user-defined priority levels (0-15) with 0 being the highest.
 	// First set the tick interrupt to the highest priority. We need to to monitor the heaters and kick the watchdog.
-	tickState = 0;
-	currentHeater = 0;
 	NVIC_SetPriority(SysTick_IRQn, 0);
 
 	// UART isn't as critical as the SysTick IRQ, but still important enough to prevent garbage on the serial line
@@ -1325,6 +1323,9 @@ void Platform::SetPidParameters(size_t heater, const PidParameters& params)
 		{
 			WriteNvData();
 		}
+
+		// Must update the overheat sums here as well if the series resistor value changed...
+		UpdateMaxHeaterTemperature();
 	}
 }
 const PidParameters& Platform::GetPidParameters(size_t heater) const
