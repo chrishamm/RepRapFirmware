@@ -10,7 +10,7 @@ $ARDUINO_VERSION = "1.6.7"
 $GCC_VERSION = "4.8.3-2014q1"
 $BOSSAC_VERSION = "1.3a-arduino"
 
-$DUET_BOARD_VERSION = "1.0.9"
+$DUET_BOARD_VERSION = "1.1.1"
 
 # Workspace paths
 $LIBRARY_PATH = "$(Get-Location)\Libraries"
@@ -27,8 +27,12 @@ $OPTIMIZATION = "-O3"
 $ARDUINO_PATH = "$($env:APPDATA)\Arduino15"
 if (-not (Test-Path $ARDUINO_PATH))
 {
-    Write-Error "Arduino directory not found! Are you using $ARDUINO_VERSION?"
-    Exit
+	$ARDUINO_PATH = "$($env:LOCALAPPDATA)\Arduino15"
+	if (-not (Test-Path $ARDUINO_PATH))
+	{
+		Write-Warning "Arduino directory not found! Are you using $ARDUINO_VERSION ?"
+		Exit
+	}
 }
 
 # Detect Duet board path
@@ -43,7 +47,7 @@ if (-not (Test-Path $DUET_BOARD_PATH))
 $DUET_LIBRARY_PATH = "$DUET_BOARD_PATH\libraries"
 if (-not (Test-Path $DUET_LIBRARY_PATH))
 {
-    Write-Error "Duet libraries not found! Are you using v1.0.8 or newer?"
+    Write-Error "Duet libraries not found! Are you using $DUET_BOARD_VERSION ?"
     Exit
 }
 
@@ -71,7 +75,7 @@ $CXX = "$GCC_PATH\bin\$($CROSS_COMPILE)g++.exe"
 $LD = "$GCC_PATH\bin\$($CROSS_COMPILE)gcc.exe"
 $OBJCOPY = "$GCC_PATH\bin\$($CROSS_COMPILE)objcopy.exe"
 
-$INCLUDES = @("$DUET_LIBRARY_PATH\Flash", "$DUET_LIBRARY_PATH\EMAC", "$DUET_LIBRARY_PATH\Lwip", "$DUET_LIBRARY_PATH\SD_HSMCI", "$DUET_LIBRARY_PATH\SD_HSMCI\utility", "$DUET_LIBRARY_PATH\SPI", "$DUET_LIBRARY_PATH\Wire")
+$INCLUDES = @("$DUET_LIBRARY_PATH\Flash", "$DUET_LIBRARY_PATH\EMAC", "$DUET_LIBRARY_PATH\Lwip", "$DUET_LIBRARY_PATH\Lwip\lwip\src\include", "$DUET_LIBRARY_PATH\SD_HSMCI", "$DUET_LIBRARY_PATH\SD_HSMCI\utility", "$DUET_LIBRARY_PATH\SPI", "$DUET_LIBRARY_PATH\Wire")
 $INCLUDES += @("$LIBRARY_PATH\MAX31855", "$LIBRARY_PATH\MCP4461")
 $INCLUDES += @("$DUET_BOARD_PATH\cores\arduino", "$DUET_BOARD_PATH\variants\duet")
 $INCLUDES += @("$DUET_BOARD_PATH\system\libsam", "$DUET_BOARD_PATH\system\libsam\include", "$DUET_BOARD_PATH\system\CMSIS\CMSIS\Include", "$DUET_BOARD_PATH\system\CMSIS\Device\ATMEL")
@@ -88,7 +92,7 @@ $LDFLAGS_A = "$OPTIMIZATION -Wl,--gc-sections -mcpu=cortex-m3 `"-T$DUET_BOARD_PA
 $LDFLAGS_B = "`"$DUET_BOARD_PATH\variants\duet\libsam_sam3x8e_gcc_rel.a`" -lm -lgcc -Wl,--end-group"
 
 $SOURCEPATHS = @("$DUET_BOARD_PATH\cores\arduino", "$DUET_BOARD_PATH\cores\arduino\USB", "$DUET_BOARD_PATH\variants\duet")
-$SOURCEPATHS += @("$DUET_LIBRARY_PATH\EMAC", "$DUET_LIBRARY_PATH\Lwip\lwip\src\api", "$DUET_LIBRARY_PATH\Lwip\lwip\src\core", "$DUET_LIBRARY_PATH\Lwip\lwip\src\core\ipv4", "$DUET_LIBRARY_PATH\Lwip\lwip\src\netif", "$DUET_LIBRARY_PATH\Lwip\lwip\src\sam\netif", "$DUET_LIBRARY_PATH\Lwip\contrib\apps\mdns", "$DUET_LIBRARY_PATH\Lwip\contrib\apps\netbios", "$DUET_LIBRARY_PATH\Flash", "$DUET_LIBRARY_PATH\SD_HSMCI\utility", "$DUET_LIBRARY_PATH\SPI", "$DUET_LIBRARY_PATH\Wire")
+$SOURCEPATHS += @("$DUET_LIBRARY_PATH\EMAC", "$DUET_LIBRARY_PATH\Lwip\lwip\src\api", "$DUET_LIBRARY_PATH\Lwip\lwip\src\core", "$DUET_LIBRARY_PATH\Lwip\lwip\src\core\ipv4", "$DUET_LIBRARY_PATH\Lwip\lwip\src\netif", "$DUET_LIBRARY_PATH\Lwip\lwip\src\netif", "$DUET_LIBRARY_PATH\Lwip\contrib\apps\mdns", "$DUET_LIBRARY_PATH\Lwip\contrib\apps\netbios", "$DUET_LIBRARY_PATH\Flash", "$DUET_LIBRARY_PATH\SD_HSMCI\utility", "$DUET_LIBRARY_PATH\SPI", "$DUET_LIBRARY_PATH\Wire")
 $SOURCEPATHS += @("$LIBRARY_PATH\MAX31855", "$LIBRARY_PATH\MCP4461")
 
 $C_SOURCES = $SOURCEPATHS | % { $(Get-ChildItem "$_\*.c") | % { "$_" } }
