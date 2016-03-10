@@ -92,7 +92,7 @@ $LDFLAGS_A = "$OPTIMIZATION -Wl,--gc-sections -mcpu=cortex-m3 `"-T$DUET_BOARD_PA
 $LDFLAGS_B = "`"$DUET_BOARD_PATH\variants\duet\libsam_sam3x8e_gcc_rel.a`" -lm -lgcc -Wl,--end-group"
 
 $SOURCEPATHS = @("$DUET_BOARD_PATH\cores\arduino", "$DUET_BOARD_PATH\cores\arduino\USB", "$DUET_BOARD_PATH\variants\duet")
-$SOURCEPATHS += @("$DUET_LIBRARY_PATH\EMAC", "$DUET_LIBRARY_PATH\Lwip\lwip\src\api", "$DUET_LIBRARY_PATH\Lwip\lwip\src\core", "$DUET_LIBRARY_PATH\Lwip\lwip\src\core\ipv4", "$DUET_LIBRARY_PATH\Lwip\lwip\src\netif", "$DUET_LIBRARY_PATH\Lwip\lwip\src\netif", "$DUET_LIBRARY_PATH\Lwip\contrib\apps\mdns", "$DUET_LIBRARY_PATH\Lwip\contrib\apps\netbios", "$DUET_LIBRARY_PATH\Flash", "$DUET_LIBRARY_PATH\SD_HSMCI\utility", "$DUET_LIBRARY_PATH\SPI", "$DUET_LIBRARY_PATH\Wire")
+$SOURCEPATHS += @("$DUET_LIBRARY_PATH\Lwip\lwip\src\api", "$DUET_LIBRARY_PATH\Lwip\lwip\src\core", "$DUET_LIBRARY_PATH\Lwip\lwip\src\core\ipv4", "$DUET_LIBRARY_PATH\Lwip\lwip\src\netif", "$DUET_LIBRARY_PATH\EMAC","$DUET_LIBRARY_PATH\Lwip\contrib\apps\mdns", "$DUET_LIBRARY_PATH\Lwip\contrib\apps\netbios", "$DUET_LIBRARY_PATH\Flash", "$DUET_LIBRARY_PATH\SD_HSMCI\utility", "$DUET_LIBRARY_PATH\SPI", "$DUET_LIBRARY_PATH\Wire")
 $SOURCEPATHS += @("$LIBRARY_PATH\MAX31855", "$LIBRARY_PATH\MCP4461")
 
 $C_SOURCES = $SOURCEPATHS | % { $(Get-ChildItem "$_\*.c") | % { "$_" } }
