@@ -22,8 +22,8 @@ Licence: GPL
 
 const float invHeatPwmAverageCount = HEAT_SAMPLE_TIME/HEAT_PWM_AVERAGE_TIME;
 
-Heat::Heat(Platform* p) : platform(p), active(false), coldExtrude(false),
-	maxHeaterTemperature(BAD_HIGH_TEMPERATURE), bedHeater(BED_HEATER), chamberHeater(-1)
+Heat::Heat(Platform* p) : platform(p), active(false), coldExtrude(false), bedHeater(BED_HEATER),
+	chamberHeater(-1)
 {
 	for(size_t heater = 0; heater < HEATERS; heater++)
 	{
@@ -128,12 +128,6 @@ bool Heat::HeaterAtSetTemperature(int8_t heater) const
 	return (target < TEMPERATURE_LOW_SO_DONT_CARE) || (fabs(dt - target) <= TEMPERATURE_CLOSE_ENOUGH);
 }
 
-void Heat::SetMaxHeaterTemperature(float t)
-{
-	maxHeaterTemperature = t;
-	platform->UpdateMaxHeaterTemperature();
-}
-
 //******************************************************************************************************
 
 PID::PID(Platform* p, int8_t h) : platform(p), heater(h)
@@ -163,7 +157,7 @@ void PID::Init()
 
 void PID::SetActiveTemperature(float t)
 {
-	if (t > reprap.GetHeat()->GetMaxHeaterTemperature())
+	if (t > platform->GetTemperatureLimit())
 	{
 		platform->MessageF(GENERIC_MESSAGE, "Error: Temperature %.1f too high for heater %d!\n", t, heater);
 	}
@@ -174,13 +168,60 @@ void PID::SetActiveTemperature(float t)
 
 void PID::SetStandbyTemperature(float t)
 {
-	if (t > reprap.GetHeat()->GetMaxHeaterTemperature())
+	if (t > platform->GetTemperatureLimit())
 	{
 		platform->MessageF(GENERIC_MESSAGE, "Error: Temperature %.1f too high for heater %d!\n", t, heater);
 	}
 
 	SwitchOn();
 	standbyTemperature = t;
+}
+
+void PID::Activate()
+{
+	if (temperatureFault)
+	{
+		return;
+	}
+
+	SwitchOn();
+	active = true;
+	if (!heatingUp)
+	{
+		timeSetHeating = platform->Time();
+	}
+	heatingUp = activeTemperature > temperature;
+}
+
+void PID::Standby()
+{
+	if (temperatureFault)
+	{
+		return;
+	}
+
+	SwitchOn();
+	active = false;
+	if (!heatingUp)
+	{
+		timeSetHeating = platform->Time();
+	}
+	heatingUp = standbyTemperature > temperature;
+}
+
+void PID::ResetFault()
+{
+	temperatureFault = false;
+	timeSetHeating = platform->Time();		// otherwise we will get another timeout immediately
+	badTemperatureCount = 0;
+}
+
+void PID::SwitchOff()
+{
+	platform->SetHeater(heater, 0.0);
+	active = false;
+	switchedOff = true;
+	heatingUp = false;
 }
 
 void PID::SwitchOn()
@@ -209,8 +250,8 @@ void PID::Spin()
 
 	// Always know our temperature, regardless of whether we have been switched on or not
 
-	Platform::TempError err = Platform::TempError::errOpen;  // Initially assign an error; call should update but if it doesn't, we'll treat as an error
-	temperature = platform->GetTemperature(heater, &err);    // In the event of an error, err is set and BAD_ERROR_TEMPERATURE is returned
+	Platform::TempError err = Platform::TempError::errOk;	// assume no error
+	temperature = platform->GetTemperature(heater, &err);	// in the event of an error, err is set and BAD_ERROR_TEMPERATURE is returned
 
 	// If we're not switched on, or there's a fault, turn the power off and go home.
 	// If we're not switched on, then nothing is using us.  This probably means that
@@ -228,7 +269,16 @@ void PID::Spin()
 	// We are switched on.  Check for faults.  Temperature silly-low or silly-high mean open-circuit
 	// or shorted thermistor respectively.
 
-	if (temperature < BAD_LOW_TEMPERATURE || temperature > reprap.GetHeat()->GetMaxHeaterTemperature())
+	if (temperature < BAD_LOW_TEMPERATURE)
+	{
+		err = Platform::TempError::errOpen;
+	}
+	else if (temperature > platform->GetTemperatureLimit())
+	{
+		err = Platform::TempError::errTooHigh;
+	}
+
+	if (err != Platform::TempError::errOk)
 	{
 		if (platform->DoThermistorAdc(heater) || !(Platform::TempErrorPermanent(err)))
 		{

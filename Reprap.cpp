@@ -85,7 +85,7 @@ void RepRap::Exit()
 	move->Exit();
 	gCodes->Exit();
 	webserver->Exit();
-	platform->Message(GENERIC_MESSAGE, "RepRap class exited.\n");
+	platform->Message(HOST_MESSAGE, "RepRap class exited.\n");
 	platform->Exit();
 }
 
@@ -135,7 +135,7 @@ void RepRap::Spin()
 	{
 		if (t->DisplayColdExtrudeWarning() && ToolWarningsAllowed())
 		{
-			platform->MessageF(GENERIC_MESSAGE, "Warning: Tool %d was not driven because its heater temperatures were not high enough\n", t->Number());
+			platform->MessageF(GENERIC_MESSAGE, "Error: Tool %d was not driven because its heater temperatures were not high enough\n", t->Number());
 			break;
 		}
 	}
@@ -477,8 +477,9 @@ void RepRap::Tick()
 	if (active && !resetting)
 	{
 		platform->Tick();
+
 		++ticksInSpinState;
-		if (ticksInSpinState >= 20000)	// if we stall for 20 seconds, save diagnostic data and reset
+		if (ticksInSpinState >= 5000)	// if we stall for 5 seconds, save diagnostic data and reset
 		{
 			resetting = true;
 			for(size_t i = 0; i < HEATERS; i++)
@@ -963,61 +964,9 @@ OutputBuffer *RepRap::GetConfigResponse()
 		response->catf("%c%.2f", ch, platform->MaxFeedrate(drive));
 		ch = ',';
 	}
+	response->cat("]}");
 
-	// Configuration File (whitespaces are skipped, otherwise we easily risk overflowing the response buffer)
-	response->cat("],\"configFile\":\"");
-	FileStore *configFile = platform->GetFileStore(platform->GetSysDir(), platform->GetConfigFile(), false);
-	if (configFile == nullptr)
-	{
-		response->cat("not found");
-	}
-	else
-	{
-		char c, esc;
-		bool readingWhitespace = false;
-		size_t bytesWritten = 0, bytesLeft = OutputBuffer::GetBytesLeft(response);
-		while (configFile->Read(c) && bytesWritten + 4 < bytesLeft)		// need 4 bytes to finish this response
-		{
-			if (!readingWhitespace || (c != ' ' && c != '\t'))
-			{
-				switch (c)
-				{
-					case '\r':
-						esc = 'r';
-						break;
-					case '\n':
-						esc = 'n';
-						break;
-					case '\t':
-						esc = 't';
-						break;
-					case '"':
-						esc = '"';
-						break;
-					case '\\':
-						esc = '\\';
-						break;
-					default:
-						esc = 0;
-						break;
-				}
-
-				if (esc)
-				{
-					response->catf("\\%c", esc);
-					bytesWritten += 2;
-				}
-				else
-				{
-					response->cat(c);
-					bytesWritten++;
-				}
-			}
-			readingWhitespace = (c == ' ' || c == '\t');
-		}
-		configFile->Close();
-	}
-	response->cat("\"}");
+	// Config file is no longer included, because we can use rr_configfile or M503 instead
 
 	return response;
 }
@@ -1446,37 +1395,44 @@ void RepRap::SetName(const char* nm)
 	network->SetHostname(myName);
 }
 
-// Given that we want to extrude/etract the specified extruder drives, check if they are allowed.
+// Given that we want to extrude/retract the specified extruder drives, check if they are allowed.
 // For each disallowed one, log an error to report later and return a bit in the bitmap.
 // This may be called by an ISR!
 unsigned int RepRap::GetProhibitedExtruderMovements(unsigned int extrusions, unsigned int retractions)
 {
-	unsigned int result = 0;
-	Tool *tool = toolList;
-	while (tool != nullptr)
+	if (GetHeat()->ColdExtrude())
 	{
-		for(size_t driveNum = 0; driveNum < tool->DriveCount(); driveNum++)
+		return 0;
+	}
+
+	Tool *tool = currentTool;
+	if (tool == nullptr)
+	{
+		// This should not happen, but if on tool is selected then don't allow any extruder movement
+		return extrusions | retractions;
+	}
+
+	unsigned int result = 0;
+	for (size_t driveNum = 0; driveNum < tool->DriveCount(); driveNum++)
+	{
+		const unsigned int extruderDrive = (unsigned int)(tool->Drive(driveNum));
+		const unsigned int mask = 1 << extruderDrive;
+		if (extrusions & mask)
 		{
-			const int extruderDrive = tool->Drive(driveNum);
-			unsigned int mask = 1 << extruderDrive;
-			if (extrusions & mask)
+			if (!tool->ToolCanDrive(true))
 			{
-				if (!tool->ToolCanDrive(true))
-				{
-					result |= mask;
-				}
-			}
-			else if (retractions & (1 << extruderDrive))
-			{
-				if (!tool->ToolCanDrive(false))
-				{
-					result |= mask;
-				}
+				result |= mask;
 			}
 		}
-
-		tool = tool->Next();
+		else if (retractions & mask)
+		{
+			if (!tool->ToolCanDrive(false))
+			{
+				result |= mask;
+			}
+		}
 	}
+
 	return result;
 }
 

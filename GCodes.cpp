@@ -42,7 +42,7 @@ GCodes::GCodes(Platform* p, Webserver* w) :
 
 void GCodes::Exit()
 {
-	platform->Message(GENERIC_MESSAGE, "GCodes class exited.\n");
+	platform->Message(HOST_MESSAGE, "GCodes class exited.\n");
 	active = false;
 }
 
@@ -1012,10 +1012,10 @@ bool GCodes::OffsetAxes(GCodeBuffer* gb)
 // Returns true if completed, false if needs to be called again.
 // 'reply' is only written if there is an error.
 // 'error' is false on entry, gets changed to true if there is an error.
-bool GCodes::DoHome(const GCodeBuffer *gb, StringRef& reply, bool& error)
+bool GCodes::DoHome(GCodeBuffer *gb, StringRef& reply, bool& error)
 //pre(reply.upb == STRING_LENGTH)
 {
-	if (!homing && !CanStartMacro(gb))
+	if (!CanStartMacro(gb))
 	{
 		// If we're interfering with another GCode, wait until it's finished
 		return false;
@@ -1050,6 +1050,19 @@ bool GCodes::DoHome(const GCodeBuffer *gb, StringRef& reply, bool& error)
 			return true;
 		}
 		return false;
+	}
+	// Check which axes are supposed to be homed on other printers
+	else if (NoHome())
+	{
+		homeX = gb->Seen(axisLetters[X_AXIS]);
+		homeY = gb->Seen(axisLetters[Y_AXIS]);
+		homeZ = gb->Seen(axisLetters[Z_AXIS]);
+		if (NoHome())
+		{
+			homeX = true;
+			homeY = true;
+			homeZ = true;
+		}
 	}
 
 	// Homing procedure for cartesian printers
@@ -1373,16 +1386,17 @@ bool GCodes::SetSingleZProbeAtAPosition(GCodeBuffer *gb, StringRef& reply)
 // for the bed not quite being the plane Z = 0.
 bool GCodes::SetBedEquationWithProbe(const GCodeBuffer *gb, StringRef& reply)
 {
+	if (!CanStartMacro(gb))
+	{
+		// If we're interfering with another GCode, wait until it's finished
+		return false;
+	}
+
 	// In order to stay compatible with older firmware versions,
 	// only execute bed.g if it is actually present in the /sys directory.
 	const char *absoluteBedGPath = platform->GetMassStorage()->CombineName(SYS_DIR, BED_EQUATION_G);
 	if (platform->GetMassStorage()->FileExists(absoluteBedGPath))
 	{
-		if (!CanStartMacro(gb))
-		{
-			return false;
-		}
-
 		if (DoFileMacro(gb, absoluteBedGPath))
 		{
 			settingBedEquationWithProbe = false;
@@ -2643,19 +2657,6 @@ bool GCodes::HandleGcode(GCodeBuffer* gb)
 			break;
 
 		case 28: // Home
-			if (NoHome() && !reprap.GetMove()->IsDeltaMode())
-			{
-				homeX = gb->Seen(axisLetters[X_AXIS]);
-				homeY = gb->Seen(axisLetters[Y_AXIS]);
-				homeZ = gb->Seen(axisLetters[Z_AXIS]);
-				if (NoHome())
-				{
-					homeX = true;
-					homeY = true;
-					homeZ = true;
-				}
-			}
-
 			result = DoHome(gb, reply, error);
 			break;
 
@@ -3588,7 +3589,7 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 					gb->GetLongArray(heaters, numH);
 					// Note that M106 H-1 disables thermostatic mode. The following code implements that automatically.
 					uint16_t hh = 0;
-					for (unsigned int h = 0; h < numH; ++h)
+					for (size_t h = 0; h < numH; ++h)
 					{
 						const int hnum = heaters[h];
 						if (hnum >= 0 && hnum < HEATERS)
@@ -3615,11 +3616,27 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 
 				if (!seen)
 				{
-					reply.printf("Fan%i value: %d%%, Frequency: %dHz, Inverted: %s\n",
-								fanNumber,
-								(int)(platform->GetFanValue(fanNumber) * 100.0),
-								(int)(platform->GetFanPwmFrequency(fanNumber)),
-								(platform->GetCoolingInverted(fanNumber)) ? "yes" : "no");
+					reply.printf("Fan%i frequency: %dHz, inverted: %s, ",
+							fanNumber,
+							(int)(platform->GetFanPwmFrequency(fanNumber)),
+							(platform->GetCoolingInverted(fanNumber)) ? "yes" : "no");
+					uint16_t hh = platform->GetHeatersMonitored(fanNumber);
+					if (hh == 0)
+					{
+						reply.catf("value: %d%%\n", (int)(platform->GetFanValue(fanNumber) * 100.0));
+					}
+					else
+					{
+						reply.catf("trigger: %dC, heaters:", (int)platform->GetTriggerTemperature(fanNumber));
+						for (size_t i = 0; i < HEATERS; ++i)
+						{
+							if ((hh & (1 << i)) != 0)
+							{
+								reply.catf(" %u", i);
+							}
+						}
+						reply.cat("\n");
+					}
 				}
 			}
 			break;
@@ -4016,11 +4033,20 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 		case 143: // Maximum hot-end temperature
 			if (gb->Seen('S'))
 			{
-				reprap.GetHeat()->SetMaxHeaterTemperature(gb->GetFValue());
+				float limit = gb->GetFValue();
+				if (limit > BAD_LOW_TEMPERATURE && limit < BAD_ERROR_TEMPERATURE)
+				{
+					platform->SetTemperatureLimit(limit);
+				}
+				else
+				{
+					reply.copy("Invalid temperature limit\n");
+					error = true;
+				}
 			}
 			else
 			{
-				reply.printf("Maximum heater temperature is %.2fC\n", reprap.GetHeat()->GetMaxHeaterTemperature());
+				reply.printf("Temperature limit is %.1fC\n", platform->GetTemperatureLimit());
 			}
 			break;
 
@@ -4039,14 +4065,7 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			}
 			break;
 
-		//    case 160: //number of mixing filament drives  TODO: With tools defined, is this needed?
-		//    	if(gb->Seen('S'))
-		//		{
-		//			platform->SetMixingDrives(gb->GetIValue());
-		//		}
-		//		break;
-
-		case 190: // Wait for bed temperature to reach target temp - deprecated
+		case 190: // Set bed temperature and wait
 			{
 				const int8_t bedHeater = reprap.GetHeat()->GetBedHeater();
 				if (bedHeater < 0)
@@ -4305,9 +4324,75 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			SetHeaterParameters(gb, reply);
 			break;
 
+		case 350: // Set/report microstepping
+			if (!AllMovesAreFinishedAndMoveBufferIsLoaded())
+			{
+				return false;
+			}
+			{
+				// interp is current an int not a bool, because we use special values of interp to set the chopper control register
+				int interp = 0;
+				if (gb->Seen('I'))
+				{
+					interp = gb->GetIValue();
+				}
+
+				bool seen = false;
+				for (size_t axis = 0; axis < AXES; axis++)
+				{
+					if (gb->Seen(axisLetters[axis]))
+					{
+						seen = true;
+						int microsteps = gb->GetIValue();
+						if (!platform->SetMicrostepping(axis, microsteps, interp))
+						{
+							platform->MessageF(GENERIC_MESSAGE, "Drive %c does not support %dx microstepping%s\n",
+									axisLetters[axis], microsteps, (interp) ? " with interpolation" : "");
+						}
+					}
+				}
+
+				if (gb->Seen(EXTRUDE_LETTER))
+				{
+					seen = true;
+					long eVals[DRIVES - AXES];
+					size_t eCount = DRIVES - AXES;
+					gb->GetLongArray(eVals, eCount);
+					for (size_t e = 0; e < eCount; e++)
+					{
+						if (!platform->SetMicrostepping(AXES + e, (int)eVals[e], interp))
+						{
+							platform->MessageF(GENERIC_MESSAGE, "Drive E%u does not support %dx microstepping%s\n",
+									e, (int)eVals[e], (interp) ? " with interpolation" : "");
+						}
+					}
+				}
+
+				if (!seen)
+				{
+					reply.copy("Microstepping - ");
+					for (size_t axis = 0; axis < AXES; ++axis)
+					{
+						bool interp;
+						int microsteps = platform->GetMicrostepping(axis, interp);
+						reply.catf("%c:%d%s, ", axisLetters[axis], microsteps, (interp) ? "(on)" : "");
+					}
+					reply.cat("E");
+					for (size_t drive = AXES; drive < DRIVES; drive++)
+					{
+						bool interp;
+						int microsteps = platform->GetMicrostepping(drive, interp);
+						reply.catf(":%d%s", microsteps, (interp) ? "(on)" : "");
+					}
+				}
+			}
+			break;
+
 		case 400: // Wait for current moves to finish
 			if (!AllMovesAreFinishedAndMoveBufferIsLoaded())
+			{
 				return false;
+			}
 			break;
 
 		case 404: // Filament width and nozzle diameter
@@ -5036,7 +5121,7 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			}
 			break;
 
-		case 579: // Scale Cartesian axes (for Delta configurations)
+		case 579: // Scale Cartesian axes (only for Delta configurations)
 			{
 				bool seen = false;
 				for(size_t axis = 0; axis < AXES; axis++)
@@ -5242,6 +5327,10 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			break;
 
 		case 906: // Set/report Motor currents
+			if (!AllMovesAreFinishedAndMoveBufferIsLoaded())
+			{
+				return false;
+			}
 			{
 				bool seen = false;
 				for(size_t axis = 0; axis < AXES; axis++)
@@ -5277,13 +5366,17 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 
 				if (!seen)
 				{
-					reply.printf("Axis currents (mA) - X:%d, Y:%d, Z:%d, E:", (int) platform->MotorCurrent(X_AXIS),
-							(int) platform->MotorCurrent(Y_AXIS), (int) platform->MotorCurrent(Z_AXIS));
+					reply.copy("Axis currents (mA) - ");
+					for (size_t axis = 0; axis < AXES; ++axis)
+					{
+						reply.catf("%c:%d, ", axisLetters[axis], (int)platform->MotorCurrent(axis));
+					}
+					reply.cat("E");
 					for (size_t drive = AXES; drive < DRIVES; drive++)
 					{
-						reply.catf("%d%c", (int) platform->MotorCurrent(drive), (drive < DRIVES - 1) ? ':' : ',');
+						reply.catf("%d%c", (int)platform->MotorCurrent(drive), (drive < DRIVES - 1) ? ':' : ',');
 					}
-					reply.catf(" idle factor %d\n", (int)(platform->GetIdleCurrentFactor() * 100.0));
+					reply.catf(" idle factor %d%%", (int)(platform->GetIdleCurrentFactor() * 100.0));
 				}
 			}
 			break;
@@ -5301,7 +5394,7 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			}
 
 			isFlashing = true;
-			if (!DoDwellTime(2.0))
+			if (!DoDwellTime(1.0))
 			{
 				// wait a second so all HTTP clients are notified
 				return false;

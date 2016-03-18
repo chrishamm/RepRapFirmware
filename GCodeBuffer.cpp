@@ -3,12 +3,9 @@
 // This class stores a single G Code and provides functions to allow it to be parsed
 
 GCodeBuffer::GCodeBuffer(Platform* p, const char* id)
+	: platform(p), identity(id), checksumRequired(false), writingFileDirectory(nullptr), toolNumberAdjust(0)
 {
-	platform = p;
-	identity = id;
-	writingFileDirectory = nullptr; // Has to be done here as Init() is called every line.
-	toolNumberAdjust = 0;
-	checksumRequired = false;
+	Init();
 }
 
 void GCodeBuffer::Init()
@@ -21,13 +18,12 @@ void GCodeBuffer::Init()
 
 int GCodeBuffer::CheckSum()
 {
-	int cs = 0;
+	uint8_t cs = 0;
 	for(size_t i = 0; gcodeBuffer[i] != '*' && gcodeBuffer[i] != 0; i++)
 	{
-		cs = cs ^ gcodeBuffer[i];
+		cs = cs ^ (uint8_t)gcodeBuffer[i];
 	}
-	cs &= 0xff;  // Defensive programming...
-	return cs;
+	return (int)cs;
 }
 
 // Add a byte to the code being assembled.  If false is returned, the code is
@@ -50,7 +46,7 @@ bool GCodeBuffer::Put(char c)
 	else if (c == '\n' || c == 0)
 	{
 		gcodeBuffer[gcodePointer] = 0;
-		if (reprap.Debug(moduleGcodes) && gcodeBuffer[0] && !writingFileDirectory) // Don't bother with blank/comment lines
+		if (reprap.Debug(moduleGcodes) && gcodeBuffer[0] != 0 && !writingFileDirectory) // Don't bother with blank/comment lines
 		{
 			platform->MessageF(DEBUG_MESSAGE, "%s%s\n", identity, gcodeBuffer);
 		}
@@ -59,12 +55,14 @@ bool GCodeBuffer::Put(char c)
 		if (Seen('*'))
 		{
 			// Do the checksums match?
-			int csSent = GetIValue();
-			int csHere = CheckSum();
-			Seen('N');
+			const int csSent = GetIValue();
+			const int csHere = CheckSum();
 			if (csSent != csHere)
 			{
-				snprintf(gcodeBuffer, GCODE_LENGTH, "M998 P%d", GetIValue());
+				if (Seen('N'))
+				{
+					snprintf(gcodeBuffer, GCODE_LENGTH, "M998 P%d", GetIValue());
+				}
 				Init();
 				return true;
 			}
@@ -88,7 +86,7 @@ bool GCodeBuffer::Put(char c)
 			// Yes...
 			gcodePointer++;
 			int gp2 = 0;
-			while (gcodeBuffer[gcodePointer] != '*' && gcodeBuffer[gcodePointer])
+			while (gcodeBuffer[gcodePointer] != '*' && gcodeBuffer[gcodePointer] != 0)
 			{
 				gcodeBuffer[gp2] = gcodeBuffer[gcodePointer++];
 				gp2++;
@@ -293,12 +291,12 @@ const char* GCodeBuffer::GetString()
 const char* GCodeBuffer::GetUnprecedentedString(bool optional)
 {
 	readPointer = 0;
-	while (gcodeBuffer[readPointer] && gcodeBuffer[readPointer] != ' ')
+	while (gcodeBuffer[readPointer] != 0 && gcodeBuffer[readPointer] != ' ')
 	{
 		readPointer++;
 	}
 
-	if (!gcodeBuffer[readPointer])
+	if (gcodeBuffer[readPointer] == 0)
 	{
 		readPointer = -1;
 		if (optional)

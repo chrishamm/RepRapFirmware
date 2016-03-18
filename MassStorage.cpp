@@ -11,52 +11,45 @@ void MassStorage::Init()
 	// Initialize SD MMC stack
 
 	sd_mmc_init();
-	delay(20);
 
-	bool abort = false;
+	const size_t startTime = millis();
 	sd_mmc_err_t err;
 	do {
 		err = sd_mmc_check(0);
-		if (err > SD_MMC_ERR_NO_CARD)
-		{
-			abort = true;
-			delay(3000);	// Wait a few seconds, so users have a chance to see the following error message
-		}
-		else
-		{
-			abort = (err == SD_MMC_ERR_NO_CARD && millis() > 5000);
-		}
+		delay_ms(1);
+	} while (err != SD_MMC_OK && millis() - startTime < 5000);
 
-		if (abort)
+	if (err != SD_MMC_OK)
+	{
+		delay_ms(3000);		// Wait a few seconds so users have a chance to see this
+
+		platform->Message(HOST_MESSAGE, "Cannot initialise the SD card: ");
+		switch (err)
 		{
-			platform->Message(HOST_MESSAGE, "Cannot initialise the SD card: ");
-			switch (err)
-			{
-				case SD_MMC_ERR_NO_CARD:
-					platform->Message(HOST_MESSAGE, "Card not found\n");
-					break;
-				case SD_MMC_ERR_UNUSABLE:
-					platform->Message(HOST_MESSAGE, "Card is unusable, try another one\n");
-					break;
-				case SD_MMC_ERR_SLOT:
-					platform->Message(HOST_MESSAGE, "Slot unknown\n");
-					break;
-				case SD_MMC_ERR_COMM:
-					platform->Message(HOST_MESSAGE, "General communication error\n");
-					break;
-				case SD_MMC_ERR_PARAM:
-					platform->Message(HOST_MESSAGE, "Illegal input parameter\n");
-					break;
-				case SD_MMC_ERR_WP:
-					platform->Message(HOST_MESSAGE, "Card write protected\n");
-					break;
-				default:
-					platform->MessageF(HOST_MESSAGE, "Unknown (code %d)\n", err);
-					break;
-			}
-			return;
+			case SD_MMC_ERR_NO_CARD:
+				platform->Message(HOST_MESSAGE, "Card not found\n");
+				break;
+			case SD_MMC_ERR_UNUSABLE:
+				platform->Message(HOST_MESSAGE, "Card is unusable, try another one\n");
+				break;
+			case SD_MMC_ERR_SLOT:
+				platform->Message(HOST_MESSAGE, "Slot unknown\n");
+				break;
+			case SD_MMC_ERR_COMM:
+				platform->Message(HOST_MESSAGE, "General communication error\n");
+				break;
+			case SD_MMC_ERR_PARAM:
+				platform->Message(HOST_MESSAGE, "Illegal input parameter\n");
+				break;
+			case SD_MMC_ERR_WP:
+				platform->Message(HOST_MESSAGE, "Card write protected\n");
+				break;
+			default:
+				platform->MessageF(HOST_MESSAGE, "Unknown (code %d)\n", err);
+				break;
 		}
-	} while (err != SD_MMC_OK);
+		return;
+	}
 
 	// Print some card details (optional)
 
@@ -91,7 +84,7 @@ void MassStorage::Init()
 
 	// Mount the file system
 
-	int mounted = f_mount(0, &fileSystem);
+	FRESULT mounted = f_mount(0, &fileSystem);
 	if (mounted != FR_OK)
 	{
 		platform->MessageF(HOST_MESSAGE, "Can't mount filesystem 0: code %d\n", mounted);
@@ -324,15 +317,16 @@ bool MassStorage::DirectoryExists(const char* directory, const char* subDirector
 
 FileStore::FileStore(Platform* p) : platform(p)
 {
+	buf = reinterpret_cast<uint8_t *>(buf32);
 }
 
 void FileStore::Init()
 {
-	bufferPointer = 0;
+	bufferLength = bufferPointer = position = 0;
 	inUse = false;
 	writing = false;
-	lastBufferEntry = 0;
 	openCount = 0;
+	closeRequested = false;
 }
 
 // Open a local file (for example on an SD card).
@@ -343,18 +337,14 @@ bool FileStore::Open(const char* directory, const char* fileName, bool write)
 	const char *location = (directory != nullptr)
 							? platform->GetMassStorage()->CombineName(directory, fileName)
 							: fileName;
-	writing = write;
-	lastBufferEntry = FILE_BUFFER_SIZE - 1;
-	bytesRead = 0;
-
-	FRESULT openReturn = f_open(&file, location, (writing) ? FA_CREATE_ALWAYS | FA_WRITE : FA_OPEN_EXISTING | FA_READ);
+	FRESULT openReturn = f_open(&file, location, write ? (FA_CREATE_ALWAYS | FA_WRITE) : (FA_OPEN_EXISTING | FA_READ));
 	if (openReturn != FR_OK)
 	{
 		platform->MessageF(GENERIC_MESSAGE, "Error: Can't open %s to %s, error code %d\n", location, (writing) ? "write" : "read", openReturn);
 		return false;
 	}
 
-	bufferPointer = (writing) ? 0 : FILE_BUFFER_SIZE;
+	writing = write;
 	inUse = true;
 	openCount = 1;
 	return true;
@@ -370,33 +360,40 @@ void FileStore::Duplicate()
 	++openCount;
 }
 
-bool FileStore::Close()
+// May be called from ISR
+void FileStore::Close()
 {
 	if (!inUse)
 	{
 		platform->Message(GENERIC_MESSAGE, "Error: Attempt to close a non-open file.\n");
-		return false;
+		return;
 	}
+
 	--openCount;
-	if (openCount != 0)
+	if (openCount == 0)
 	{
-		return true;
+		closeRequested = true;
 	}
+}
+
+void FileStore::CloseFSO()
+{
+	// Flush all remaining data
 	bool ok = true;
 	if (writing)
 	{
 		ok = Flush();
 	}
-	FRESULT fr = f_close(&file);
-	inUse = false;
-	writing = false;
-	lastBufferEntry = 0;
-	return ok && fr == FR_OK;
-}
 
-FilePosition FileStore::Position() const
-{
-	return bytesRead;
+	// Close the FatFS file. Report an error if anything went wrong
+	FRESULT fr = f_close(&file);
+	if (!ok || fr != FR_OK)
+	{
+		platform->Message(GENERIC_MESSAGE, "Error: Could not close file.\n");
+	}
+
+	// Reset this one agaain
+	Init();
 }
 
 bool FileStore::Seek(FilePosition pos)
@@ -413,8 +410,8 @@ bool FileStore::Seek(FilePosition pos)
 	FRESULT fr = f_lseek(&file, pos);
 	if (fr == FR_OK)
 	{
-		bufferPointer = (writing) ? 0 : FILE_BUFFER_SIZE;
-		bytesRead = pos;
+		bufferPointer = bufferLength = 0;
+		position = pos;
 		return true;
 	}
 	return false;
@@ -442,18 +439,19 @@ float FileStore::FractionRead() const
 	{
 		return 0.0;
 	}
-
-	return (float)bytesRead / (float)len;
+	return (float)position / (float)len;
 }
 
 bool FileStore::ReadBuffer()
 {
-	FRESULT readStatus = f_read(&file, buf, FILE_BUFFER_SIZE, &lastBufferEntry);	// Read a chunk of file
-	if (readStatus)
+	FRESULT readStatus = f_read(&file, buf, FILE_BUFFER_SIZE, &bufferLength);	// Read a chunk of file
+	if (readStatus != FR_OK)
 	{
 		platform->Message(GENERIC_MESSAGE, "Error: Cannot read file.\n");
+		bufferLength = bufferPointer = 0;
 		return false;
 	}
+
 	bufferPointer = 0;
 	return true;
 }
@@ -467,16 +465,15 @@ bool FileStore::Read(char& b)
 		return false;
 	}
 
-	if (bufferPointer >= (int)FILE_BUFFER_SIZE)
+	if (bufferLength == 0 || bufferPointer >= FILE_BUFFER_SIZE)
 	{
-		bool ok = ReadBuffer();
-		if (!ok)
+		if (!ReadBuffer())
 		{
 			return false;
 		}
 	}
 
-	if (bufferPointer >= (int)lastBufferEntry)
+	if (bufferPointer >= bufferLength)
 	{
 		b = 0;  // Good idea?
 		return false;
@@ -484,20 +481,20 @@ bool FileStore::Read(char& b)
 
 	b = (char) buf[bufferPointer];
 	bufferPointer++;
-	bytesRead++;
-
+	position++;
 	return true;
 }
 
-// Block read, doesn't use the buffer
-// Returns -1 if the read process failed
-int FileStore::Read(char* extBuf, unsigned int nBytes)
+// Block read, doesn't use the buffer but invalidates it. Returns -1 if the read process failed
+int FileStore::Read(char* extBuf, size_t nBytes)
 {
 	if (!inUse)
 	{
 		platform->Message(GENERIC_MESSAGE, "Error: Attempt to read from a non-open file.\n");
 		return -1;
 	}
+	position += bufferLength - bufferPointer;
+	bufferLength = bufferPointer = 0;
 
 	size_t numBytesRead;
 	FRESULT readStatus = f_read(&file, extBuf, nBytes, &numBytesRead);
@@ -506,7 +503,7 @@ int FileStore::Read(char* extBuf, unsigned int nBytes)
 		platform->Message(GENERIC_MESSAGE, "Error: Cannot read file.\n");
 		return -1;
 	}
-	bytesRead += numBytesRead;
+	position += numBytesRead;
 
 	return numBytesRead;
 }
@@ -515,10 +512,8 @@ bool FileStore::WriteBuffer()
 {
 	if (bufferPointer != 0)
 	{
-		bool ok = InternalWriteBlock((const char*)buf, bufferPointer);
-		if (!ok)
+		if (!InternalWriteBlock((const char *)buf, bufferPointer))
 		{
-			platform->Message(GENERIC_MESSAGE, "Error: Cannot write to file. Disc may be full.\n");
 			return false;
 		}
 		bufferPointer = 0;
@@ -535,7 +530,7 @@ bool FileStore::Write(char b)
 	}
 	buf[bufferPointer] = b;
 	bufferPointer++;
-	if (bufferPointer >= (int)FILE_BUFFER_SIZE)
+	if (bufferPointer >= FILE_BUFFER_SIZE)
 	{
 		return WriteBuffer();
 	}
@@ -548,7 +543,7 @@ bool FileStore::Write(const char* b)
 }
 
 // Direct block write that bypasses the buffer. Used when uploading files.
-bool FileStore::Write(const char *s, unsigned int len)
+bool FileStore::Write(const char *s, size_t len)
 {
 	if (!inUse)
 	{
@@ -562,27 +557,28 @@ bool FileStore::Write(const char *s, unsigned int len)
 	return InternalWriteBlock(s, len);
 }
 
-bool FileStore::InternalWriteBlock(const char *s, unsigned int len)
+bool FileStore::InternalWriteBlock(const char *s, size_t len)
 {
- 	unsigned int bytesWritten;
+	size_t bytesWritten;
 	uint32_t time = micros();
- 	FRESULT writeStatus = f_write(&file, s, len, &bytesWritten);
+	FRESULT writeStatus = f_write(&file, s, len, &bytesWritten);
 	time = micros() - time;
 	if (time > longestWriteTime)
 	{
 		longestWriteTime = time;
 	}
- 	if ((writeStatus != FR_OK) || (bytesWritten != len))
- 	{
- 		platform->Message(GENERIC_MESSAGE, "Error: Cannot write to file. Disc may be full.\n");
- 		return false;
- 	}
- 	return true;
- }
+	if ((writeStatus != FR_OK) || (bytesWritten != len))
+	{
+		platform->MessageF(GENERIC_MESSAGE, "Error: Cannot write to file. Disc may be full (code %d).\n", writeStatus);
+		return false;
+	}
+	position += bytesWritten;
+	return true;
+}
 
 bool FileStore::Flush()
 {
-	if (!inUse)
+	if (!inUse && !closeRequested)
 	{
 		platform->Message(GENERIC_MESSAGE, "Error: Attempt to flush a non-open file.\n");
 		return false;

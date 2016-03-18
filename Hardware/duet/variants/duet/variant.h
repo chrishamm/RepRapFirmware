@@ -254,29 +254,28 @@ static const uint8_t X13  = 105;
 static const uint8_t X14  = 106;
 static const uint8_t X15  = 106;
 static const uint8_t X16  = 108;
-static const uint8_t X17  = 109;
 
 //HSMCI
-static const uint8_t PIN_HSMCI_MCCDA_GPIO  = 110;
-static const uint8_t PIN_HSMCI_MCCK_GPIO  = 111;
-static const uint8_t PIN_HSMCI_MCDA0_GPIO  = 112;
-static const uint8_t PIN_HSMCI_MCDA1_GPIO  = 113;
-static const uint8_t PIN_HSMCI_MCDA2_GPIO  = 114;
-static const uint8_t PIN_HSMCI_MCDA3_GPIO  = 115;
+static const uint8_t PIN_HSMCI_MCCDA_GPIO  = 109;
+static const uint8_t PIN_HSMCI_MCCK_GPIO  = 110;
+static const uint8_t PIN_HSMCI_MCDA0_GPIO  = 111;
+static const uint8_t PIN_HSMCI_MCDA1_GPIO  = 112;
+static const uint8_t PIN_HSMCI_MCDA2_GPIO  = 113;
+static const uint8_t PIN_HSMCI_MCDA3_GPIO  = 114;
 
 //EMAC
-static const uint8_t PIN_EMAC_EREFCK  = 116;
-static const uint8_t PIN_EMAC_ETXEN  = 117;
-static const uint8_t PIN_EMAC_ETX0  = 118;
-static const uint8_t PIN_EMAC_ETX1  = 119;
-static const uint8_t PIN_EMAC_ECRSDV  = 120;
-static const uint8_t PIN_EMAC_ERX0  = 121;
-static const uint8_t PIN_EMAC_ERX1  = 122;
-static const uint8_t PIN_EMAC_ERXER  = 123;
-static const uint8_t PIN_EMAC_EMDC  = 124;
-static const uint8_t PIN_EMAC_EMDIO  = 125;
+static const uint8_t PIN_EMAC_EREFCK  = 115;
+static const uint8_t PIN_EMAC_ETXEN  = 116;
+static const uint8_t PIN_EMAC_ETX0  = 117;
+static const uint8_t PIN_EMAC_ETX1  = 118;
+static const uint8_t PIN_EMAC_ECRSDV  = 119;
+static const uint8_t PIN_EMAC_ERX0  = 120;
+static const uint8_t PIN_EMAC_ERX1  = 121;
+static const uint8_t PIN_EMAC_ERXER  = 122;
+static const uint8_t PIN_EMAC_EMDC  = 123;
+static const uint8_t PIN_EMAC_EMDIO  = 124;
 
-static const uint32_t MaxPinNumber = 109; // X17
+static const uint32_t MaxPinNumber = 108; // X16
 static const uint32_t PwmFastClock = 25000 * 255;              // fast PWM clock for Intel spec PWM fans that need 25kHz PWM
 static const uint32_t PwmSlowClock = (25000 * 255) / 256;      // slow PWM clock to allow us to get slow speeds
 

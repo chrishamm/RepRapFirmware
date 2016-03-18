@@ -88,8 +88,8 @@
 
 // bEndpointAddress in Endpoint Descriptor
 #define USB_ENDPOINT_DIRECTION_MASK            0x80
-#define USB_ENDPOINT_OUT(addr)                 ((addr) | 0x00)
-#define USB_ENDPOINT_IN(addr)                  ((addr) | 0x80)
+#define USB_ENDPOINT_OUT(addr)                 ((uint8_t)((addr) | 0x00))
+#define USB_ENDPOINT_IN(addr)                  ((uint8_t)((addr) | 0x80))
 
 #define USB_ENDPOINT_TYPE_MASK                 0x03
 #define USB_ENDPOINT_TYPE_CONTROL              0x00
@@ -254,10 +254,10 @@ _Pragma("pack()")
 	{ 18, 1, 0x200, _class,_subClass,_proto,_packetSize0,_vid,_pid,_version,_im,_ip,_is,_configs }
 
 #define D_CONFIG(_totalLength,_interfaces) \
-	{ 9, 2, _totalLength, _interfaces, 1, 0, USB_CONFIG_SELF_POWERED, USB_CONFIG_POWER_MA(500) }
+	{ 9, 2, (uint16_t)(_totalLength), _interfaces, 1, 0, USB_CONFIG_SELF_POWERED, USB_CONFIG_POWER_MA(500) }
 
 #define D_OTHERCONFIG(_totalLength,_interfaces) \
-	{ 9, 7, _totalLength, _interfaces, 1, 0, USB_CONFIG_SELF_POWERED, USB_CONFIG_POWER_MA(500) }
+	{ 9, 7, (uint16_t)(_totalLength), _interfaces, 1, 0, USB_CONFIG_SELF_POWERED, USB_CONFIG_POWER_MA(500) }
 
 #define D_INTERFACE(_n,_numEndpoints,_class,_subClass,_protocol) \
 	{ 9, 4, _n, 0, _numEndpoints, _class,_subClass, _protocol, 0 }

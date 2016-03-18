@@ -48,7 +48,11 @@ extern void analogReference(eAnalogReference ulMode);
  * \param freq (optional)
  */
 extern void analogWriteDuet(uint32_t ulPin, uint32_t ulValue, uint16_t freq);
-extern void analogWrite(uint32_t ulPin, uint32_t ulValue);
+
+inline void analogWrite(uint32_t ulPin, uint32_t ulValue)
+{
+	analogWriteDuet(ulPin, ulValue, 1000);		// default PWM frequency is 1000Hz
+}
 
 /*
  * \brief Reads the value from the specified analog pin.

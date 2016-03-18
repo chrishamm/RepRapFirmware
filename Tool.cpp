@@ -279,11 +279,18 @@ void Tool::SetVariables(const float* standby, const float* active)
 		}
 		else
 		{
-			activeTemperatures[heater] = active[heater];
-			standbyTemperatures[heater] = standby[heater];
+			const float temperatureLimit = reprap.GetPlatform()->GetTemperatureLimit();
+			if (active[heater] < temperatureLimit)
+			{
+				activeTemperatures[heater] = active[heater];
+				reprap.GetHeat()->SetActiveTemperature(heaters[heater], activeTemperatures[heater]);
+			}
 
-			reprap.GetHeat()->SetActiveTemperature(heaters[heater], activeTemperatures[heater]);
-			reprap.GetHeat()->SetStandbyTemperature(heaters[heater], standbyTemperatures[heater]);
+			if (standby[heater] < temperatureLimit)
+			{
+				standbyTemperatures[heater] = standby[heater];
+				reprap.GetHeat()->SetStandbyTemperature(heaters[heater], standbyTemperatures[heater]);
+			}
 
 			if (toolActive)
 			{
@@ -306,11 +313,10 @@ void Tool::GetVariables(float* standby, float* active) const
 // May be called from ISR
 bool Tool::ToolCanDrive(bool extrude)
 {
-	if (heaterFault)
-		return false;
-
-	if (reprap.GetHeat()->ColdExtrude() || AllHeatersAtHighTemperature(extrude))
+	if (!heaterFault && AllHeatersAtHighTemperature(extrude))
+	{
 		return true;
+	}
 
 	displayColdExtrudeWarning = true;
 	return false;

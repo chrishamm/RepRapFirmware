@@ -1,16 +1,17 @@
-Custom hardware tree for the Duet platform (version 1.1.1)
+Custom hardware tree for the Duet platform (version 1.1.2)
 
 
 This device tree is based on the official "Arduino Due" 1.6.5 platform files, however the following changes have been made:
 
 - WString class is no longer present in the Arduino core. Use char arrays in conjunction with StringRef containers instead
 - IPAddress and Network classes have been dropped from the Arduino core, because LwIP cannot be wrapped adequately
-- EMAC RX buffer has been expanded to 24*128 bytes
+- EMAC RX buffer has been expanded to 32*128 bytes
 - UART classes have been expanded by a "canWrite" method
-- TRNG support for random() has been added
+- TRNG support has been added
 - Low-level Arduino libraries from RepRapFirmware have been integrated
 - SamNonDuePin library has been merged into the SAM3X variant code
 - Implemented USB VBUS detection to check properly if the USB port is open
+- Arduino Pin 36 is PWM-capable
 
 To include this hardware tree, open the Arduino IDE.  Open the Boards Manager and install the Due device tree.  Then
 go to File -> Preferences and set "Additional Boards Manager URLs" to:

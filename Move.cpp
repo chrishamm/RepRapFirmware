@@ -101,7 +101,7 @@ void Move::Init()
 
 void Move::Exit()
 {
-	reprap.GetPlatform()->Message(GENERIC_MESSAGE, "Move class exited.\n");
+	reprap.GetPlatform()->Message(HOST_MESSAGE, "Move class exited.\n");
 	active = false;
 }
 
@@ -950,8 +950,8 @@ void Move::DoDeltaCalibration(size_t numFactors, StringRef& reply)
 	//uint32_t startTime = reprap.GetPlatform()->GetInterruptClocks();
 
 	// Transform the probing points to motor endpoints and store them in a matrix, so that we can do multiple iterations using the same data
-	FixedMatrix<float, MAX_DELTA_PROBE_POINTS, AXES> probeMotorPositions;
-	float corrections[MAX_DELTA_PROBE_POINTS];
+	FixedMatrix<float, MAX_PROBE_POINTS, AXES> probeMotorPositions;
+	float corrections[MAX_PROBE_POINTS];
 	float initialSumOfSquares = 0.0;
 	for (size_t i = 0; i < numPoints; ++i)
 	{
@@ -982,7 +982,7 @@ void Move::DoDeltaCalibration(size_t numFactors, StringRef& reply)
 	for (;;)
 	{
 		// Build a Nx7 matrix of derivatives with respect to xa, xb, yc, za, zb, zc, diagonal.
-		FixedMatrix<float, MAX_DELTA_PROBE_POINTS, NumDeltaFactors> derivativeMatrix;
+		FixedMatrix<float, MAX_PROBE_POINTS, NumDeltaFactors> derivativeMatrix;
 		for (size_t i = 0; i < numPoints; ++i)
 		{
 			for (size_t j = 0; j < numFactors; ++j)
@@ -1032,7 +1032,7 @@ void Move::DoDeltaCalibration(size_t numFactors, StringRef& reply)
 			PrintVector("Solution", solution, numFactors);
 
 			// Calculate and display the residuals
-			float residuals[MAX_DELTA_PROBE_POINTS];
+			float residuals[MAX_PROBE_POINTS];
 			for (size_t i = 0; i < numPoints; ++i)
 			{
 				residuals[i] = zBedProbePoints[i];
@@ -1050,7 +1050,7 @@ void Move::DoDeltaCalibration(size_t numFactors, StringRef& reply)
 
 		// Calculate the expected probe heights using the new parameters
 		{
-			float expectedResiduals[MAX_DELTA_PROBE_POINTS];
+			float expectedResiduals[MAX_PROBE_POINTS];
 			float sumOfSquares = 0.0;
 			for (size_t i = 0; i < numPoints; ++i)
 			{
@@ -1284,23 +1284,9 @@ void Move::GetCurrentMachinePosition(float m[DRIVES + 1], bool disableMotorMappi
 bool Move::IsExtruding() const
 {
 	cpu_irq_disable();
-	if (NoLiveMovement())
-	{
-		cpu_irq_enable();
-		return false;
-	}
-
-	for(size_t i = 0; i < DRIVES - AXES; i++)
-	{
-		if (currentDda->GetRawExtruderDistance(i) > 0.0)
-		{
-			cpu_irq_enable();
-			return true;
-		}
-	}
-
+	bool result = currentDda != nullptr && currentDda->IsPrintingMove();
 	cpu_irq_enable();
-	return false;
+	return result;
 }
 
 // Return the transformed machine coordinates
@@ -1509,7 +1495,7 @@ const char* Move::GetGeometryString() const
 }
 
 // Return true if the specified axis shares its motors with another. Safe to call for extruders as well as axes.
-bool Move::IsCoreXYAxis(unsigned int axis) const
+bool Move::IsCoreXYAxis(size_t axis) const
 {
 	switch(coreXYMode)
 	{

@@ -24,13 +24,17 @@ Licence: GPL
 #define CONFIGURATION_H
 
 #define NAME "RepRapFirmware"
-#define VERSION "1.09x-ch"
-#define DATE "2016-03-07"
+#define VERSION "1.09y-ch"
+#define DATE "2016-03-18"
 
 #define AUTHORS "reprappro, dc42, chrishamm, t3p3, dnewman"
 
 // Comment out the following line if you don't want to build the firmware with Flash save support
 #define FLASH_SAVE_ENABLED
+
+// If enabled, the following control the use of the optional ExternalDrivers module
+//#define EXTERNAL_DRIVERS		(1)
+//#define FIRST_EXTERNAL_DRIVE	(4)
 
 // Other firmware that we might switch to be compatible with.
 
@@ -68,11 +72,11 @@ const float HOT_ENOUGH_TO_EXTRUDE = 160.0;				// Celsius
 const float HOT_ENOUGH_TO_RETRACT = 90.0;				// Celsius
 const float TIME_TO_HOT = 150.0;						// Seconds
 
-const uint8_t MAX_BAD_TEMPERATURE_COUNT = 6;			// Number of bad temperature samples before a heater fault is reported
+const uint8_t MAX_BAD_TEMPERATURE_COUNT = 4;			// Number of bad temperature samples permitted before a heater fault is reported
 const float BAD_LOW_TEMPERATURE = -10.0;				// Celsius
-const float BAD_HIGH_TEMPERATURE = 300.0;				// Celsius
+const float DEFAULT_TEMPERATURE_LIMIT = 300.0;			// Celsius
 const float HOT_END_FAN_TEMPERATURE = 45.0;				// Temperature at which a thermostatic hot end fan comes on
-const float BAD_ERROR_TEMPERATURE = 2000.0;				// Must exceed BAD_HIGH_TEMPERATURE
+const float BAD_ERROR_TEMPERATURE = 2000.0;				// Must exceed DEFAULT_TEMPERATURE_LIMIT
 
 const unsigned int SLOW_HEATER_PWM_FREQUENCY = 10;		// Hz
 const unsigned int NORMAL_HEATER_PWM_FREQUENCY = 500;	// Hz
@@ -81,7 +85,6 @@ const unsigned int DEFAULT_FAN_PWM_FREQUENCY = 500;		// Hz (increase to 25kHz fo
 // Default Z probe values
 
 const size_t MAX_PROBE_POINTS = 16;						// Maximum number of probe points
-const size_t MAX_DELTA_PROBE_POINTS = 8;				// Must be <= MaxProbePoints, may be smaller to reduce matrix storage requirements. Preferably a power of 2.
 
 const float DEFAULT_Z_DIVE = 5.0;						// Millimetres
 const float DEFAULT_PROBE_SPEED = 2.0;					// Default Z probing speed

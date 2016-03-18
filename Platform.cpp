@@ -22,6 +22,10 @@
 #include "RepRapFirmware.h"
 #include "DueFlashStorage.h"
 
+#ifdef EXTERNAL_DRIVERS
+#include "ExternalDrivers.h"
+#endif
+
 extern char _end;
 extern "C" char *sbrk(int i);
 
@@ -76,8 +80,8 @@ extern "C"
 
 void watchdogSetup(void)
 {
-    // RepRapFirmware enables the watchdog by default
-    watchdogEnable(1000);
+	// RepRapFirmware enables the watchdog by default
+	watchdogEnable(1000);
 }
 
 //*************************************************************************************************
@@ -214,7 +218,11 @@ void Platform::Init()
 		{
 			pinMode(directionPins[drive], OUTPUT);
 		}
+#ifdef EXTERNAL_DRIVERS
+		if (drive < FIRST_EXTERNAL_DRIVE && enablePins[drive] >= 0)
+#else
 		if (enablePins[drive] >= 0)
+#endif
 		{
 			pinMode(enablePins[drive], OUTPUT);
 		}
@@ -234,6 +242,10 @@ void Platform::Init()
 			endStopLogicLevel[drive] = true;					// assume all endstops use active high logic e.g. normally-closed switch to ground
 		}
 	}
+
+#ifdef EXTERNAL_DRIVERS
+	ExternalDrivers::Init();
+#endif
 
 	extrusionAncilliaryPWM = 0.0;
 
@@ -276,14 +288,8 @@ void Platform::Init()
 		thermistorAdcChannels[heater] = PinToAdcChannel(tempSensePins[heater]);	// Translate the Arduino Due Analog pin number to the SAM ADC channel number
 		SetThermistorNumber(heater, heater);									// map the thermistor straight through
 		thermistorFilters[heater].Init(analogRead(tempSensePins[heater]));
-
-		// Calculate and store the ADC average sum that corresponds to an overheat condition, so that we can check is quickly in the tick ISR
-		float thermistorOverheatResistance = nvData.pidParams[heater].GetRInf()
-				* exp(-nvData.pidParams[heater].GetBeta() / (BAD_HIGH_TEMPERATURE - ABS_ZERO));
-		float thermistorOverheatAdcValue = (AD_RANGE_REAL + 1) * thermistorOverheatResistance
-				/ (thermistorOverheatResistance + nvData.pidParams[heater].thermistorSeriesR);
-		thermistorOverheatSums[heater] = (uint32_t) (thermistorOverheatAdcValue + 0.9) * THERMISTOR_AVERAGE_READINGS;
 	}
+	SetTemperatureLimit(DEFAULT_TEMPERATURE_LIMIT);
 
 	// Fans
 
@@ -337,6 +343,20 @@ void Platform::InvalidateFiles()
 	for (size_t i = 0; i < MAX_FILES; i++)
 	{
 		files[i]->Init();
+	}
+}
+
+void Platform::SetTemperatureLimit(float t)
+{
+	temperatureLimit = t;
+	for (size_t heater = 0; heater < HEATERS; heater++)
+	{
+		// Calculate and store the ADC average sum that corresponds to an overheat condition, so that we can check it quickly in the tick ISR
+		float thermistorOverheatResistance = nvData.pidParams[heater].GetRInf()
+			* exp(-nvData.pidParams[heater].GetBeta() / (temperatureLimit - ABS_ZERO));
+		float thermistorOverheatAdcValue = (AD_RANGE_REAL + 1) * thermistorOverheatResistance
+			/ (thermistorOverheatResistance + nvData.pidParams[heater].thermistorSeriesR);
+		thermistorOverheatSums[heater] = (uint32_t) (thermistorOverheatAdcValue + 0.9) * THERMISTOR_AVERAGE_READINGS;
 	}
 }
 
@@ -636,6 +656,7 @@ void Platform::ResetNvData()
 
 #ifdef FLASH_SAVE_ENABLED
 	nvData.magic = FlashData::magicValue;
+	nvData.version = FlashData::versionValue;
 #endif
 }
 
@@ -643,7 +664,7 @@ void Platform::ReadNvData()
 {
 #ifdef FLASH_SAVE_ENABLED
 	DueFlashStorage::read(FlashData::nvAddress, &nvData, sizeof(nvData));
-	if (nvData.magic != FlashData::magicValue)
+	if (nvData.magic != FlashData::magicValue || nvData.version != FlashData::versionValue)
 	{
 		// Nonvolatile data has not been initialised since the firmware was last written, so set up default values
 		ResetNvData();
@@ -684,20 +705,26 @@ void Platform::UpdateFirmware()
 	// The machine will be unresponsive for a few seconds, don't risk damaging the heaters...
 	reprap.EmergencyStop();
 
-
-	// Step 1 - Write update binary to Flash
+	// Step 1 - Write update binary to Flash and overwrite the remaining space with zeros
+	// Leave the last 1KB of Flash memory untouched, so we can reuse the NvData after this update
 	char data[IFLASH_PAGE_SIZE];
 	int bytesRead;
 	for(uint32_t flashAddr = IAP_FLASH_START; flashAddr < IAP_FLASH_END; flashAddr += IFLASH_PAGE_SIZE)
 	{
 		bytesRead = iapFile->Read(data, IFLASH_PAGE_SIZE);
 
-		if (bytesRead > 0 && flashAddr + bytesRead < IFLASH_ADDR + IFLASH_SIZE)
+		if (bytesRead > 0)
 		{
+			// Do we have to fill up the remaining buffer with zeros?
+			if (bytesRead != IFLASH_PAGE_SIZE)
+			{
+				memset(data + bytesRead, 0, sizeof(data[0]) * (IFLASH_PAGE_SIZE - bytesRead));
+			}
+
 			// Write one page at a time
 			cpu_irq_disable();
 			flash_unlock(flashAddr, flashAddr + IFLASH_PAGE_SIZE - 1, nullptr, nullptr);
-			flash_write(flashAddr, data, bytesRead, 1);
+			flash_write(flashAddr, data, IFLASH_PAGE_SIZE, 1);
 			flash_lock(flashAddr, flashAddr + IFLASH_PAGE_SIZE - 1, nullptr, nullptr);
 			cpu_irq_enable();
 
@@ -710,13 +737,27 @@ void Platform::UpdateFirmware()
 		}
 		else
 		{
-			// Cannot read any more or IAP binary exceeds 64KiB limit
-			break;
+			// Empty write buffer so we can use it to fill up the remaining space
+			if (bytesRead != IFLASH_PAGE_SIZE)
+			{
+				memset(data, 0, sizeof(data[0]) * sizeof(data));
+				bytesRead = IFLASH_PAGE_SIZE;
+			}
+
+			// Fill up the remaining space
+			cpu_irq_disable();
+			flash_unlock(flashAddr, flashAddr + IFLASH_PAGE_SIZE - 1, nullptr, nullptr);
+			flash_write(flashAddr, data, IFLASH_PAGE_SIZE, 1);
+			flash_lock(flashAddr, flashAddr + IFLASH_PAGE_SIZE - 1, nullptr, nullptr);
+			cpu_irq_enable();
 		}
 	}
 	iapFile->Close();
 
-	// Step 2 - Reallocate the vector table and program entry point to the new IAP binary
+	// Step 2 - Let the firmware do whatever is necessary before we exit this program
+	reprap.Exit();
+
+	// Step 3 - Reallocate the vector table and program entry point to the new IAP binary
 	// This does essentially what the Atmel AT02333 paper suggests (see 3.2.2 ff)
 
 	// Disable all IRQs
@@ -768,7 +809,18 @@ float Platform::Time()
 
 void Platform::Exit()
 {
-	Message(GENERIC_MESSAGE, "Platform class exited.\n");
+	// Close all files
+	for(size_t i = 0; i < MAX_FILES; i++)
+	{
+		if (files[i]->inUse)
+		{
+			files[i]->Close();
+			files[i]->CloseFSO();
+		}
+	}
+
+	// Stop processing data
+	Message(HOST_MESSAGE, "Platform class exited.\n");
 	active = false;
 }
 
@@ -859,6 +911,16 @@ void Platform::Spin()
 {
 	if (!active)
 		return;
+
+	// Check if any files are supposed to be closed
+	for(size_t i = 0; i < MAX_FILES; i++)
+	{
+		if (files[i]->closeRequested)
+		{
+			// We cannot do this in ISRs, so do it here
+			files[i]->CloseFSO();
+		}
+	}
 
 	// Write non-blocking data to the AUX line
 	OutputBuffer *auxOutputBuffer = auxOutput->GetFirstItem();
@@ -977,6 +1039,7 @@ void Platform::SoftwareReset(SoftwareResetReason reason)
 	// Record the reason for the software reset
 	SoftwareResetData temp;
 	temp.magic = SoftwareResetData::magicValue;
+	temp.version = SoftwareResetData::versionValue;
 	temp.resetReason = resetReason;
 	GetStackUsage(nullptr, nullptr, &temp.neverUsedRam);
 
@@ -998,17 +1061,22 @@ void TC3_Handler()
 	++numInterruptsExecuted;
 	lastInterruptTime = Platform::GetInterruptClocks();
 #endif
+//	__enable_irq();								// allow nested interrupts
 	reprap.GetMove()->Interrupt();
+//	__disable_irq();
 }
 
 void TC4_Handler()
 {
 	TC_GetStatus(TC1, 1);
+//	__enable_irq();								// allow nested interrupts
 	reprap.GetNetwork()->Interrupt();
+//	__disable_irq();
 }
 
 void FanInterrupt()
 {
+//	__enable_irq();								// allow nested interrupts
 	++fanInterruptCount;
 	if (fanInterruptCount == fanMaxInterruptCount)
 	{
@@ -1017,6 +1085,7 @@ void FanInterrupt()
 		fanLastResetTime = now;
 		fanInterruptCount = 0;
 	}
+//	__disable_irq();
 }
 
 void Platform::InitialiseInterrupts()
@@ -1098,7 +1167,7 @@ void Platform::Diagnostics()
 		SoftwareResetData temp;
 		temp.magic = 0;
 		DueFlashStorage::read(SoftwareResetData::nvAddress, &temp, sizeof(SoftwareResetData));
-		if (temp.magic == SoftwareResetData::magicValue)
+		if (temp.magic == SoftwareResetData::magicValue && temp.version == SoftwareResetData::versionValue)
 		{
 			MessageF(GENERIC_MESSAGE, "Last software reset code & available RAM: 0x%04x, %u\n", temp.resetReason, temp.neverUsedRam);
 			MessageF(GENERIC_MESSAGE, "Spinning module during software reset: %s\n", moduleName[temp.resetReason & 0x0F]);
@@ -1254,7 +1323,10 @@ float Platform::GetTemperature(size_t heater, TempError* err) const
 		else
 		{
 			// thermistor short circuit, return a high temperature
-			if (err) *err = TempError::errShort;
+			if (err)
+			{
+				*err = TempError::errShort;
+			}
 			return BAD_ERROR_TEMPERATURE;
 		}
 	}
@@ -1292,6 +1364,7 @@ float Platform::GetTemperature(size_t heater, TempError* err) const
 		case TempError::errShortVcc : return "sensor circuit is shorted to the voltage rail";
 		case TempError::errShortGnd : return "sensor circuit is shorted to ground";
 		case TempError::errOpen : return "sensor circuit is open/disconnected";
+		case TempError::errTooHigh: return "temperature above safety limit";
 		case TempError::errTimeout : return "communication error whilst reading sensor; read took too long";
 		case TempError::errIO: return "communication error whilst reading sensor; check sensor connections";
 	}
@@ -1300,6 +1373,7 @@ float Platform::GetTemperature(size_t heater, TempError* err) const
 // See if we need to turn on the hot end fan
 bool Platform::AnyHeaterHot(uint16_t heaters, float t) const
 {
+	// Check tool heaters first
 	for (size_t h = 0; h < reprap.GetToolHeatersInUse(); ++h)
 	{
 		if (((1 << h) & heaters) != 0)
@@ -1311,9 +1385,32 @@ bool Platform::AnyHeaterHot(uint16_t heaters, float t) const
 			}
 		}
 	}
+
+	// Check the bed heater too, in case the user wants a fan on when the bed is hot
+	int8_t bedHeater = reprap.GetHeat()->GetBedHeater();
+	if (bedHeater >= 0 && ((1 << (unsigned int)bedHeater) & heaters) != 0)
+	{
+		const float ht = GetTemperature(bedHeater);
+		if (ht >= t || ht < BAD_LOW_TEMPERATURE)
+		{
+			return true;
+		}
+	}
+
+	// Check the chamber heater as well
+	int8_t chamberHeater = reprap.GetHeat()->GetChamberHeater();
+	if (chamberHeater >= 0 && ((1 << (unsigned int)chamberHeater) & heaters) != 0)
+	{
+		const float ht = GetTemperature(chamberHeater);
+		if (ht >= t || ht < BAD_LOW_TEMPERATURE)
+		{
+			return true;
+		}
+	}
 	return false;
 }
 
+// Update the heater PID parameters or thermistor resistance etc.
 void Platform::SetPidParameters(size_t heater, const PidParameters& params)
 {
 	if (heater < HEATERS && params != nvData.pidParams[heater])
@@ -1323,9 +1420,7 @@ void Platform::SetPidParameters(size_t heater, const PidParameters& params)
 		{
 			WriteNvData();
 		}
-
-		// Must update the overheat sums here as well if the series resistor value changed...
-		UpdateMaxHeaterTemperature();
+		SetTemperatureLimit(temperatureLimit);		// recalculate the thermistor resistance at max allowed temperature for the tick ISR
 	}
 }
 const PidParameters& Platform::GetPidParameters(size_t heater) const
@@ -1350,18 +1445,6 @@ void Platform::SetHeaterPwm(size_t heater, uint8_t power)
 	{
 		uint16_t freq = (reprap.GetHeat()->UseSlowPwm(heater)) ? SLOW_HEATER_PWM_FREQUENCY : NORMAL_HEATER_PWM_FREQUENCY;
 		analogWriteDuet(heatOnPins[heater], (HEAT_ON == 0) ? 255 - power : power, freq);
-	}
-}
-
-void Platform::UpdateMaxHeaterTemperature()
-{
-	for(size_t heater = 0; heater < HEATERS; heater++)
-	{
-		float thermistorOverheatResistance = nvData.pidParams[heater].GetRInf()
-				* exp(-nvData.pidParams[heater].GetBeta() / (reprap.GetHeat()->GetMaxHeaterTemperature() - ABS_ZERO));
-		float thermistorOverheatAdcValue = (AD_RANGE_REAL + 1) * thermistorOverheatResistance
-				/ (thermistorOverheatResistance + nvData.pidParams[heater].thermistorSeriesR);
-		thermistorOverheatSums[heater] = (uint32_t) (thermistorOverheatAdcValue + 0.9) * THERMISTOR_AVERAGE_READINGS;
 	}
 }
 
@@ -1455,11 +1538,22 @@ void Platform::EnableDrive(size_t drive)
 		{
 			UpdateMotorCurrent(driver);
 
-			const int pin = enablePins[driver];
-			if (pin >= 0)
+#ifdef EXTERNAL_DRIVERS
+			if (drive >= FIRST_EXTERNAL_DRIVE)
 			{
-				digitalWrite(pin, enableValues[driver]);
+				ExternalDrivers::EnableDrive(driver - FIRST_EXTERNAL_DRIVE, true);
 			}
+			else
+			{
+#endif
+				const int pin = enablePins[driver];
+				if (pin >= 0)
+				{
+					digitalWrite(pin, enableValues[driver]);
+				}
+#ifdef EXTERNAL_DRIVERS
+			}
+#endif
 		}
 	}
 }
@@ -1472,11 +1566,23 @@ void Platform::DisableDrive(size_t drive)
 		const int driver = driverNumbers[drive];
 		if (driver >= 0)
 		{
-			const int pin = enablePins[driver];
-			if (pin >= 0)
+#ifdef EXTERNAL_DRIVERS
+			if (drive >= FIRST_EXTERNAL_DRIVE)
 			{
-				digitalWrite(pin, !enableValues[driver]);
+				ExternalDrivers::EnableDrive(driver - FIRST_EXTERNAL_DRIVE, false);
 			}
+			else
+			{
+#endif
+				const int pin = enablePins[driver];
+				if (pin >= 0)
+				{
+					digitalWrite(pin, !enableValues[driver]);
+				}
+				driveState[drive] = DriveStatus::disabled;
+#ifdef EXTERNAL_DRIVERS
+			}
+#endif
 		}
 		driveState[drive] = DriveStatus::disabled;
 	}
@@ -1515,36 +1621,46 @@ void Platform::UpdateMotorCurrent(size_t drive)
 		{
 			current *= idleCurrentFactor;
 		}
-		unsigned short pot = (unsigned short)((0.256*current*8.0*senseResistor + maxStepperDigipotVoltage/2)/maxStepperDigipotVoltage);
 		const size_t driver = driverNumbers[drive];
-
-		if (driver < 4)
+#ifdef EXTERNAL_DRIVERS
+		if (driver >= FIRST_EXTERNAL_DRIVE)
 		{
-			mcpDuet.setNonVolatileWiper(potWipes[driver], pot);
-			mcpDuet.setVolatileWiper(potWipes[driver], pot);
+			ExternalDrivers::SetCurrent(driver - FIRST_EXTERNAL_DRIVE, current);
 		}
 		else
 		{
-			if (board == BoardType::Duet_085)
+#endif
+			unsigned short pot = (unsigned short)((0.256*current*8.0*senseResistor + maxStepperDigipotVoltage/2)/maxStepperDigipotVoltage);
+			unsigned short dac = (unsigned short)((0.256*current*8.0*senseResistor + maxStepperDACVoltage/2)/maxStepperDACVoltage);
+			if (driver < 4)
 			{
-				// Extruder 1 is on DAC channel 0
-				if (driver == 4)
-				{
-					unsigned short dac = (unsigned short)((0.256*current*8.0*senseResistor + maxStepperDACVoltage/2)/maxStepperDACVoltage);
-					analogWrite(DAC0, dac);
-				}
-				else
-				{
-					mcpExpansion.setNonVolatileWiper(potWipes[driver - 1], pot);
-					mcpExpansion.setVolatileWiper(potWipes[driver - 1], pot);
-				}
+				mcpDuet.setNonVolatileWiper(potWipes[driver], pot);
+				mcpDuet.setVolatileWiper(potWipes[driver], pot);
 			}
 			else
 			{
-				mcpExpansion.setNonVolatileWiper(potWipes[driver], pot);
-				mcpExpansion.setVolatileWiper(potWipes[driver], pot);
+				if (board == BoardType::Duet_085)
+				{
+					// Extruder 0 is on DAC channel 0
+					if (driver == 4)
+					{
+						analogWrite(DAC0, dac);
+					}
+					else
+					{
+						mcpExpansion.setNonVolatileWiper(potWipes[driver-1], pot);
+						mcpExpansion.setVolatileWiper(potWipes[driver-1], pot);
+					}
+				}
+				else
+				{
+					mcpExpansion.setNonVolatileWiper(potWipes[driver], pot);
+					mcpExpansion.setVolatileWiper(potWipes[driver], pot);
+				}
 			}
+#ifdef EXTERNAL_DRIVERS
 		}
+#endif
 	}
 }
 
@@ -1564,6 +1680,47 @@ void Platform::SetIdleCurrentFactor(float f)
 			UpdateMotorCurrent(drive);
 		}
 	}
+}
+// Set the microstepping, returning true if successful
+bool Platform::SetMicrostepping(size_t drive, int microsteps, int mode)
+{
+	if (drive < DRIVES)
+	{
+#ifdef EXTERNAL_DRIVERS
+		const size_t driver = driverNumbers[drive];
+		if (driver >= FIRST_EXTERNAL_DRIVE)
+		{
+			return ExternalDrivers::SetMicrostepping(driver - FIRST_EXTERNAL_DRIVE, microsteps, mode);
+		}
+		else
+		{
+#endif
+			// On-board drivers only support x16 microstepping.
+			// We ignore the interpolation on/off parameter so that e.g. M350 I1 E16:128 won't give an error if E1 supports interpolation but E0 doesn't.
+			return microsteps == 16;
+#ifdef EXTERNAL_DRIVERS
+		}
+#endif
+	}
+	return false;
+}
+
+unsigned int Platform::GetMicrostepping(size_t drive, bool& interpolation) const
+{
+#ifdef EXTERNAL_DRIVERS
+	if (drive < DRIVES)
+	{
+		const size_t driver = driverNumbers[drive];
+		if (driver >= FIRST_EXTERNAL_DRIVE)
+		{
+			return ExternalDrivers::GetMicrostepping(driver - FIRST_EXTERNAL_DRIVE, interpolation);
+		}
+	}
+#endif
+
+	// On-board drivers only support x16 microstepping without interpolation
+	interpolation = false;
+	return 16;
 }
 
 // Set the physical drive (i.e. axis or extruder) number used by this driver
@@ -1642,7 +1799,7 @@ void Platform::InitFans()
 	for (size_t i = 0; i < NUM_FANS; ++i)
 	{
 		// The cooling fan 0 output pin gets inverted if HEAT_ON == 0 on a Duet 0.4, 0.6 or 0.7
-		fans[i].Init(COOLING_FAN_PINS[i], !HEAT_ON && board != BoardType::Duet_085);
+		fans[i].Init(COOLING_FAN_PINS[i], !HEAT_ON && (board == BoardType::Duet_06 || board == BoardType::Duet_07));
 	}
 	if (NUM_FANS > 1)
 	{
@@ -1751,7 +1908,7 @@ void Platform::Fan::Refresh()
 
 void Platform::Fan::SetPwmFrequency(float p_freq)
 {
-	freq = (uint16_t)max<float>(1.0, min<float>(65535.0, p_freq));
+	freq = (uint16_t)constrain<float>(p_freq, 1.0, 65535.0);
 	Refresh();
 }
 
@@ -1769,24 +1926,26 @@ void Platform::Fan::Check()
 FileStore* Platform::GetFileStore(const char* directory, const char* fileName, bool write)
 {
 	if (!fileStructureInitialised)
+	{
 		return nullptr;
+	}
 
 	for(size_t i = 0; i < MAX_FILES; i++)
 	{
 		if (!files[i]->inUse)
 		{
-			files[i]->inUse = true;
 			if (files[i]->Open(directory, fileName, write))
 			{
+				files[i]->inUse = true;
 				return files[i];
 			}
 			else
 			{
-				files[i]->inUse = false;
 				return nullptr;
 			}
 		}
 	}
+
 	Message(HOST_MESSAGE, "Max open file count exceeded.\n");
 	return nullptr;
 }
@@ -1796,7 +1955,7 @@ FileStore* Platform::GetFileStore(const char* filePath, bool write)
 	return GetFileStore(nullptr, filePath, write);
 }
 
-MassStorage* Platform::GetMassStorage()
+MassStorage* Platform::GetMassStorage() const
 {
 	return massStorage;
 }
@@ -1977,7 +2136,7 @@ void Platform::Message(const MessageType type, OutputBuffer *buffer)
 		default:
 			// Everything else is unsupported (and probably not used)
 			OutputBuffer::ReleaseAll(buffer);
-			MessageF(HOST_MESSAGE, "Warning: Unsupported Message call for type %u!\n", type);
+			MessageF(HOST_MESSAGE, "Error: Unsupported Message call for type %u!\n", type);
 			break;
 	}
 }
@@ -2208,16 +2367,6 @@ bool Platform::Inkjet(int bitPattern)
 
 //------------------------------------------------------------------------------------------------
 
-// Build a short-form pin descriptor for a IO pin
-OutputPin::OutputPin(unsigned int pin)
-{
-	const PinDescription& pinDesc = g_APinDescription[pin];
-	pPort = pinDesc.pPort;
-	ulPin = pinDesc.ulPin;
-}
-
-//------------------------------------------------------------------------------------------------
-
 // Pragma pop_options is not supported on this platform, so we put this time-critical code right at the end of the file
 //#pragma GCC push_options
 #pragma GCC optimize ("O3")
@@ -2287,7 +2436,7 @@ void Platform::Tick()
 				// averaging.  As such, the temperature reading is taken directly by Platform::GetTemperature() and
 				// periodically called by PID::Spin() where temperature fault handling is taken care of.  However, we
 				// must guard against overly long delays between successive calls of PID::Spin().
-
+				// Do not call Time() here, it isn't safe. We use millis() instead.
 				StartAdcConversion(zProbeAdcChannel);
 				if ((millis() - reprap.GetHeat()->GetLastSampleTime(currentHeater)) > maxPidSpinDelay)
 				{

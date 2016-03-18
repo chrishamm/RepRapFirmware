@@ -529,7 +529,7 @@ static void Test_Mode_Support( uint8_t wIndex )
 			UOTGHS->UOTGHS_DEVEPTICR[2] = UOTGHS_DEVEPTICR_TXINIC;
 			UOTGHS->UOTGHS_DEVEPTIDR[2] = UOTGHS_DEVEPTIDR_FIFOCONC;
 			for(;;);
-//      break;
+			// no break
 
 		case 1:
 			//Test mode Test_J:
@@ -540,7 +540,7 @@ static void Test_Mode_Support( uint8_t wIndex )
 			USB_SendZlp();
 			UOTGHS->UOTGHS_DEVCTRL |= UOTGHS_DEVCTRL_TSTJ;
 			for(;;);
-//      break;
+			// no break
 
 		case 2:
 			//Test mode Test_K:
@@ -551,7 +551,7 @@ static void Test_Mode_Support( uint8_t wIndex )
 			USB_SendZlp();
 			UOTGHS->UOTGHS_DEVCTRL |= UOTGHS_DEVCTRL_TSTK;
 			for(;;);
-//		break;
+			// no break
 
 		case 3:
 			//Test mode Test_SE0_NAK:
@@ -587,7 +587,7 @@ static void Test_Mode_Support( uint8_t wIndex )
 							   | UOTGHS_DEVIDR_DMA_5
 							   | UOTGHS_DEVIDR_DMA_6;
 			for(;;);
-//		break;
+			// no break
 	}
 }
 

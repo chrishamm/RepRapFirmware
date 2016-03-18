@@ -31,7 +31,11 @@ extern "C" {
  * \param debounceCutoff Debounce cutoff frequency (only one can be set per PIO)
  */
 extern void pinModeDuet(uint32_t dwPin, uint32_t dwMode, uint32_t debounceCutoff);
-extern void pinMode(uint32_t dwPin, uint32_t dwMode);
+
+inline void pinMode(uint32_t dwPin, uint32_t dwMode)
+{
+	pinModeDuet(dwPin, dwMode, 0);
+}
 
 /**
  * \brief Write a HIGH or a LOW value to a digital pin.
@@ -40,7 +44,7 @@ extern void pinMode(uint32_t dwPin, uint32_t dwMode);
  * corresponding value: 5V (or 3.3V on 3.3V boards) for HIGH, 0V (ground) for LOW.
  *
  * If the pin is configured as an INPUT, writing a HIGH value with digitalWrite() will enable an internal
- * 20K pullup resistor (see the tutorial on digital pins). Writing LOW will disable the pullup. The pullup
+ * 100K pullup resistor (see the tutorial on digital pins). Writing LOW will disable the pullup. The pullup
  * resistor is enough to light an LED dimly, so if LEDs appear to work, but very dimly, this is a likely
  * cause. The remedy is to set the pin to an output with the pinMode() function.
  *
@@ -64,8 +68,47 @@ extern void digitalWrite(uint32_t dwPin, uint32_t dwVal);
  */
 extern int digitalRead(uint32_t ulPin);
 
+/**
+ * \brief Enable or disable the pullup resistor on a pin.
+ *
+ * \param ulPin The number of the digital pin you want to change
+ *
+ * \param en Whether to enable (true) or disable (false) the pullup resistor
+ */
+extern void setPullup(uint32_t ulPin, bool en);
+
 #ifdef __cplusplus
 }
+#endif
+
+// The remaining functionality is only available to C++ clients
+#ifdef __cplusplus
+
+inline const PinDescription& GetPinDescription(uint32_t ulPin)
+{
+	return g_APinDescription[ulPin];
+}
+
+// Class to give fast access to digital output pins for stepping
+class OutputPin
+{
+	Pio *pPort;
+	uint32_t ulPin;
+public:
+	explicit OutputPin(unsigned int pin)
+	{
+		const PinDescription& pinDesc = GetPinDescription(pin);
+		pPort = pinDesc.pPort;
+		ulPin = pinDesc.ulPin;
+	}
+
+	OutputPin() : pPort(PIOC), ulPin(1 << 31) {}	// default constructor needed for array init - accesses PC31 which isn't on the package, so safe
+
+	void SetHigh() const { pPort->PIO_SODR = ulPin; }
+
+	void SetLow() const { pPort->PIO_CODR = ulPin; }
+};
+
 #endif
 
 #endif /* _WIRING_DIGITAL_ */

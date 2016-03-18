@@ -92,9 +92,6 @@ class Heat
 		void AllowColdExtrude();									// Allow cold extrusion
 		void DenyColdExtrude();										// Deny cold extrusion
 
-		float GetMaxHeaterTemperature() const;
-		void SetMaxHeaterTemperature(float t);
-
 		int8_t GetBedHeater() const;								// Get hot bed heater number
 		void SetBedHeater(int8_t heater);							// Set hot bed heater number
 
@@ -128,7 +125,6 @@ class Heat
 		PID* pids[HEATERS];							// A PID controller for each heater
 
 		bool coldExtrude;							// Is cold extrusion allowed?
-		float maxHeaterTemperature;					// What is the maximum allowed heater temperature?
 		int8_t bedHeater;							// Index of the hot bed heater to use or -1 if none is available
 		int8_t chamberHeater;						// Index of the chamber heater to use or -1 if none is available
 
@@ -159,56 +155,9 @@ inline float PID::GetTemperature() const
 	return temperature;
 }
 
-inline void PID::Activate()
-{
-	if (temperatureFault)
-	{
-		return;
-	}
-
-	SwitchOn();
-	active = true;
-	if (!heatingUp)
-	{
-		timeSetHeating = platform->Time();
-	}
-	heatingUp = activeTemperature > temperature;
-}
-
-inline void PID::Standby()
-{
-	if (temperatureFault)
-	{
-		return;
-	}
-
-	SwitchOn();
-	active = false;
-	if (!heatingUp)
-	{
-		timeSetHeating = platform->Time();
-	}
-	heatingUp = standbyTemperature > temperature;
-}
-
 inline bool PID::FaultOccurred() const
 {
 	return temperatureFault;
-}
-
-inline void PID::ResetFault()
-{
-	temperatureFault = false;
-	timeSetHeating = platform->Time();		// otherwise we will get another timeout immediately
-	badTemperatureCount = 0;
-}
-
-inline void PID::SwitchOff()
-{
-	platform->SetHeater(heater, 0.0);
-	active = false;
-	switchedOff = true;
-	heatingUp = false;
 }
 
 inline bool PID::SwitchedOff() const
@@ -248,11 +197,6 @@ inline void Heat::AllowColdExtrude()
 inline void Heat::DenyColdExtrude()
 {
 	coldExtrude = false;
-}
-
-inline float Heat::GetMaxHeaterTemperature() const
-{
-	return maxHeaterTemperature;
 }
 
 inline int8_t Heat::GetBedHeater() const

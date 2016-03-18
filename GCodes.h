@@ -131,7 +131,7 @@ class GCodes
 		int SetUpMove(GCodeBuffer* gb, StringRef& reply);			// Pass a move on to the Move module
 		bool DoDwell(GCodeBuffer *gb);								// Wait for a bit
 		bool DoDwellTime(float dwell);								// Really wait for a bit
-		bool DoHome(const GCodeBuffer *gb, StringRef& reply, bool& error);		// Home some axes
+		bool DoHome(GCodeBuffer *gb, StringRef& reply, bool& error);	// Home some axes
 		bool DoSingleZProbeAtPoint(int probePointIndex, float heightAdjust);	// Probe at a given point
 		bool DoSingleZProbe(bool reportOnly, float heightAdjust);	// Probe where we are
 		int DoZProbe(float distance);								// Do a Z probe cycle up to the maximum specified distance
@@ -251,7 +251,7 @@ inline bool GCodes::DoingFileMacro() const
 inline bool GCodes::CanStartMacro(const GCodeBuffer *gb) const
 {
 	// Macros may always start another macro file
-	if (gb == fileMacroGCode && !returningFromMacro)
+	if (gb == fileMacroGCode)
 		return true;
 
 	// Regular GCodeBuffers may do this only if no macro file is being run,
