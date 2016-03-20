@@ -586,7 +586,7 @@ bool PrintMonitor::GetFileInfo(const char *directory, const char *fileName, GCod
 bool PrintMonitor::GetFileInfoResponse(const char *filename, OutputBuffer *&response)
 {
 	// Poll file info for a specific file
-	if (filename != nullptr)
+	if (filename != nullptr && filename[0] != 0)
 	{
 		GCodeFileInfo info;
 		if (!GetFileInfo("0:/", filename, info))
