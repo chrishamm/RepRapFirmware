@@ -399,9 +399,7 @@ void Network::Init()
 	httpd_init();
 	ftpd_init();
 	telnetd_init();
-
 	netbios_init();
-	mdns_responder_init(mdns_services, ARRAY_SIZE(mdns_services), mdns_txt_records);
 
 	longWait = platform->Time();
 }
@@ -470,6 +468,9 @@ void Network::Spin()
 		{
 			start_ethernet(platform->IPAddress(), platform->NetMask(), platform->GateWay(), &ethernet_status_callback);
 			ethernetStarted = true;
+
+			// Initialise this one here, because it requires a configured IGMP network interface
+			mdns_responder_init(mdns_services, ARRAY_SIZE(mdns_services), mdns_txt_records);
 		}
 		else
 		{
@@ -782,8 +783,8 @@ void Network::Enable()
 	{
 		if (!ethernetStarted)
 		{
+			// Allow the MAC address to be set only before LwIP is started...
 			ethernet_configure_interface(platform->MACAddress(), hostname);
-			mdns_update_hostname();
 		}
 
 		resetCallback = true;	// Reset EMAC RX callback on next Spin calls
