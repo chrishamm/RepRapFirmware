@@ -197,6 +197,9 @@ void ethernet_set_configuration(const uint8_t ipAddress[], const uint8_t netMask
 		netif_set_ipaddr(&gs_net_if, &x_ip_addr);
 		netif_set_netmask(&gs_net_if, &x_net_mask);
 		netif_set_gw(&gs_net_if, &x_gateway);
+
+		// don't forget to set it up again
+		netif_set_up(&gs_net_if);
 	}
 }
 
