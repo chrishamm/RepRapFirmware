@@ -7,7 +7,7 @@
  * search-and-replace for the word "ethernetif" to replace it with
  * something that better describes your network interface.
  *
- * Copyright (c) 2012 Atmel Corporation. All rights reserved.
+ * Copyright (c) 2013-2015 Atmel Corporation. All rights reserved.
  *
  * \asf_license_start
  *
@@ -72,9 +72,6 @@
 #include <string.h>
 #include "conf_eth.h"
 
-//void my_ethernetif_input(void * pvParameters);
-//#include "gpio.h"
-
 /** Define those to better describe your network interface */
 #define IFNAME0 'e'
 #define IFNAME1 'n'
@@ -93,7 +90,7 @@
 #define NET_RW_BUFF_SIZE 1536
 
 /** The MAC address used for the test */
-static u8_t gs_uc_mac_address[] =
+static uint8_t gs_uc_mac_address[] =
 { ETHERNET_CONF_ETHADDR0, ETHERNET_CONF_ETHADDR1, ETHERNET_CONF_ETHADDR2,
   ETHERNET_CONF_ETHADDR3, ETHERNET_CONF_ETHADDR4, ETHERNET_CONF_ETHADDR5};
 
@@ -110,22 +107,6 @@ struct ethernetif {
 	struct eth_addr *ethaddr;
 	/* Add whatever per-interface state that is needed here. */
 };
-
-//*****************************AB
-
-bool ethernetif_phy_link_status(void)
-{
-	uint32_t p_ul_reg_cont;
-	/* Read the basic Configuration register (0x1 = MII_BMSR */
-	if (ethernet_phy_read_register(EMAC, BOARD_EMAC_PHY_ADDR, 0x1, &p_ul_reg_cont) != EMAC_OK)
-	{
-		LWIP_DEBUGF(LWIP_DBG_TRACE, ("PHY Register Read ERROR!\r"));
-		return false;
-	}	//  MII_LINK_STATUS       (1u << 2) /**< Link Status */
-	return (p_ul_reg_cont & (1u << 2)) ? true : false;
-}
-//*****************************AB
-
 
 /**
  * \brief EMAC interrupt handler.
@@ -144,7 +125,6 @@ void EMAC_Handler(void)
  */
 static void low_level_init(struct netif *netif)
 {
-
 #ifdef FREERTOS_USED
 	unsigned portBASE_TYPE uxPriority;
 #endif
@@ -163,8 +143,7 @@ static void low_level_init(struct netif *netif)
 	netif->mtu = NET_MTU;
 
 	/* Configure EMAC pins */
-//	ethPinsInit();
-/*	gpio_configure_pin(PIN_EEMAC_EREFCK, PIN_EMAC_FLAGS);
+	/*gpio_configure_pin(PIN_EEMAC_EREFCK, PIN_EMAC_FLAGS);
 	gpio_configure_pin(PIN_EMAC_ETX0, PIN_EMAC_FLAGS);
 	gpio_configure_pin(PIN_EMAC_ETX1, PIN_EMAC_FLAGS);
 	gpio_configure_pin(PIN_EMAC_ETXEN, PIN_EMAC_FLAGS);
@@ -173,8 +152,8 @@ static void low_level_init(struct netif *netif)
 	gpio_configure_pin(PIN_EMAC_ERX1, PIN_EMAC_FLAGS);
 	gpio_configure_pin(PIN_EMAC_ERXER, PIN_EMAC_FLAGS);
 	gpio_configure_pin(PIN_EMAC_EMDC, PIN_EMAC_FLAGS);
-	gpio_configure_pin(PIN_EMAC_EMDIO, PIN_EMAC_FLAGS);
-*/
+	gpio_configure_pin(PIN_EMAC_EMDIO, PIN_EMAC_FLAGS);*/
+
 	/* device capabilities */
 	/* don't set NETIF_FLAG_ETHARP if this device is not an ethernet one */
 	netif->flags |= NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP
@@ -185,9 +164,6 @@ static void low_level_init(struct netif *netif)
 			| NETIF_FLAG_IGMP
 #endif
 	;
-
-	netif->flags |= NETIF_FLAG_LINK_UP; //the link is up?
-    //printf("netif->flags %X \n", netif->flags);
 
 #ifdef FREERTOS_USED
 	/*
@@ -203,10 +179,9 @@ static void low_level_init(struct netif *netif)
 	/* Set the priority of the current task to the lowest possible. */
 	vTaskPrioritySet( NULL, tskIDLE_PRIORITY );
 #endif
-
 }
 
-void ethernet_hardware_init(void)
+void ethernetif_hardware_init(void)
 {
 	/* Reset PHY */
 	rstc_set_external_reset(RSTC, 13); /* (2^(13+1))/32768 */
@@ -215,8 +190,8 @@ void ethernet_hardware_init(void)
 	rstc_set_external_reset(RSTC, 0);  /* restore default */	
 
 	/* Wait for PHY to be ready (CAT811: Max400ms) */
-	volatile u32_t ul_dealy = SystemCoreClock / 1000 / 3 * 400;
-	while (ul_dealy--) { }
+	volatile u32_t ul_delay = SystemCoreClock / 1000 / 3 * 400;
+	while (ul_delay--) { }
 
 	/* Enable EMAC clock */
 	pmc_enable_periph_clk(ID_EMAC);
@@ -241,13 +216,14 @@ void ethernet_hardware_init(void)
 	NVIC_EnableIRQ(EMAC_IRQn);
 
 	/* Init MAC PHY driver */
-	if (ethernet_phy_init(EMAC, BOARD_EMAC_PHY_ADDR, SystemCoreClock) != EMAC_OK) {
+	if (ethernet_phy_init(EMAC, BOARD_EMAC_PHY_ADDR, SystemCoreClock) != EMAC_OK)
+	{
 		LWIP_DEBUGF(LWIP_DBG_TRACE, ("PHY Initialize ERROR!\r"));
 		return;
 	}
 }
 
-bool ethernet_establish_link(void)
+bool ethernetif_establish_link(void)
 {
 	/* Auto Negotiate, work in RMII mode */
 	if (ethernet_phy_auto_negotiate(EMAC, BOARD_EMAC_PHY_ADDR) != EMAC_OK)
@@ -258,7 +234,6 @@ bool ethernet_establish_link(void)
 	/* Establish ethernet link */
 	if (ethernet_phy_set_link(EMAC, BOARD_EMAC_PHY_ADDR, 1) != EMAC_OK)
 	{
-		LWIP_DEBUGF(LWIP_DBG_TRACE,("Set link ERROR!\r"));
 		return false;
 	}
 
@@ -272,6 +247,19 @@ bool ethernet_establish_link(void)
 			netifINTERFACE_TASK_PRIORITY );
 #endif
 	return true;
+}
+
+// Added by AB
+bool ethernetif_link_established(void)
+{
+	uint32_t p_ul_reg_cont;
+	/* Read the basic Configuration register (0x1 = MII_BMSR) */
+	if (ethernet_phy_read_register(EMAC, BOARD_EMAC_PHY_ADDR, 0x1, &p_ul_reg_cont) != EMAC_OK)
+	{
+		LWIP_DEBUGF(LWIP_DBG_TRACE, ("PHY Register Read ERROR!\r"));
+		return false;
+	}       //  MII_LINK_STATUS       (1u << 2) /**< Link Status */
+	return (p_ul_reg_cont & (1u << 2)) ? true : false;
 }
 
 /**
@@ -292,9 +280,9 @@ bool ethernet_establish_link(void)
 static err_t low_level_output(struct netif *netif, struct pbuf *p)
 {
 	struct pbuf *q = NULL;
-	s8_t pc_buf[NET_RW_BUFF_SIZE];
-	s8_t *bufptr = &pc_buf[0];
-	u8_t uc_rc;
+	int8_t pc_buf[NET_RW_BUFF_SIZE];
+	int8_t *bufptr = &pc_buf[0];
+	uint8_t uc_rc;
 
 #if ETH_PAD_SIZE
 	pbuf_header(p, -ETH_PAD_SIZE);    /* Drop the padding word */
@@ -333,7 +321,6 @@ static err_t low_level_output(struct netif *netif, struct pbuf *p)
 	return ERR_OK;
 }
 
-
 /**
  * \brief Should allocate a pbuf and transfer the bytes of the incoming
  * packet from the interface into the pbuf.
@@ -347,11 +334,11 @@ static struct pbuf *low_level_input(struct netif *netif)
 {
 	struct pbuf *p = NULL, *q = NULL;
 	u16_t s_len;
-	u8_t pc_buf[NET_RW_BUFF_SIZE];
-	s8_t *bufptr = (s8_t *)&pc_buf[0];
+	uint8_t pc_buf[NET_RW_BUFF_SIZE];
+	int8_t *bufptr = (int8_t *)&pc_buf[0];
 
 	uint32_t ul_frmlen;
-	u8_t uc_rc;
+	uint8_t uc_rc;
 
 	/* Obtain the size of the packet and put it into the "len"
 	 * variable. */
@@ -412,7 +399,6 @@ static struct pbuf *low_level_input(struct netif *netif)
  *
  * \return Returns true if data has been processed.
  */
-
 bool ethernetif_input(void * pvParameters)
 {
 	struct netif      *netif = (struct netif *)pvParameters;
@@ -450,11 +436,11 @@ bool ethernetif_input(void * pvParameters)
  */
 err_t ethernetif_init(struct netif *netif)
 {
-//	LWIP_ASSERT("netif != NULL", (netif != NULL));
+	LWIP_ASSERT("netif != NULL", (netif != NULL));
 
 #if LWIP_NETIF_HOSTNAME
 	/* Initialize interface hostname */
-//	netif->hostname = "lwip";				// Unused! Duet sets hostname explicitly
+//	netif->hostname = "lwip";                               // Unused! RRF sets the hostname explicitly
 #endif /* LWIP_NETIF_HOSTNAME */
 
 	/*
@@ -490,6 +476,11 @@ void ethernetif_set_rx_callback(emac_dev_tx_cb_t callback)
 
 void ethernetif_set_mac_address(const u8_t macAddress[])
 {
+	// chrishamm 2016-03-23: It doesn't matter if we don't update the EMAC's MAC address here,
+	// because we use the copy_all_frame option which is required for IGMP anyway.
+	//
+	// This function must be called before low_level_init() though, because that is where the
+	// final netif's MAC address is assigned
 	for(size_t i = 0; i < 6; ++i)
 	{
 		gs_uc_mac_address[i] = macAddress[i];

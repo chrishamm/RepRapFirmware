@@ -168,7 +168,7 @@ class Network
 
 		void Enable();
 		void Disable();
-		bool IsEnabled() const;
+		bool IsEnabled() const { return isEnabled; }
 
 		// Interfaces for the Webserver
 
@@ -202,7 +202,7 @@ class Network
 		NetworkTransaction * volatile readyTransactions;
 		NetworkTransaction * volatile writingTransactions;
 
-		enum { NetworkPreInitializing, NetworkPostInitializing, NetworkInactive, NetworkActive } state;
+		enum { NetworkInactive, NetworkEstablishingLink, NetworkActive } state;
 		bool isEnabled;
 		volatile bool resetCallback;
 		char hostname[16];								// Limit DHCP hostname to 15 characters + terminating 0

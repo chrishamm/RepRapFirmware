@@ -745,6 +745,7 @@ bool GCodes::DoFileMacro(const GCodeBuffer *gb, const char* fileName)
 				macroSourceGCodeBuffer = nullptr;
 				if (IsRunning())
 				{
+					// Don't reset this value if the print is paused - M0/M1/M24 do this
 					fractionOfFilePrinted = -1.0;
 				}
 			}
