@@ -85,7 +85,7 @@ class ProtocolInterpreter
 		virtual void ConnectionEstablished();
 		virtual void ConnectionLost(const ConnectionState *cs) { }
 		virtual bool CharFromClient(const char c) = 0;
-		virtual void NoMoreDataAvailable() = 0;
+		virtual void NoMoreDataAvailable();
 
 		virtual bool DoingFastUpload() const;
 		virtual void DoFastUpload();
@@ -267,7 +267,6 @@ class Webserver
 				void ConnectionEstablished();
 				void ConnectionLost(const ConnectionState *cs);
 				bool CharFromClient(const char c);
-				void NoMoreDataAvailable();
 				void ResetState();
 
 				bool DoingFastUpload() const;
@@ -313,7 +312,6 @@ class Webserver
 				void ConnectionEstablished();
 				void ConnectionLost(const ConnectionState *cs);
 				bool CharFromClient(const char c);
-				void NoMoreDataAvailable();
 				void ResetState();
 
 				bool GCodeAvailable() const;

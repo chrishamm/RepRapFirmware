@@ -404,6 +404,13 @@ void ProtocolInterpreter::ConnectionEstablished()
 	webserver->currentTransaction->Discard();
 }
 
+void ProtocolInterpreter::NoMoreDataAvailable()
+{
+	// Request is not complete yet, but don't care. Interpreters that do not explicitly
+	// overwrite this method don't support more than one connected client anyway
+	webserver->currentTransaction->Discard();
+}
+
 // Start writing to a new file
 bool ProtocolInterpreter::StartUpload(FileStore *file, const char *fileName)
 {
@@ -1954,12 +1961,6 @@ void Webserver::FtpInterpreter::ResetState()
 	state = idle;
 }
 
-void Webserver::FtpInterpreter::NoMoreDataAvailable()
-{
-	clientPointer = 0;
-	SendReply(422, "Incomplete or too long request", true);
-}
-
 bool Webserver::FtpInterpreter::DoingFastUpload() const
 {
 	return (IsUploading() && webserver->currentTransaction->GetLocalPort() == network->GetDataPort());
@@ -2566,15 +2567,6 @@ void Webserver::TelnetInterpreter::ResetState()
 	state = idle;
 	connectTime = 0;
 	clientPointer = 0;
-}
-
-void Webserver::TelnetInterpreter::NoMoreDataAvailable()
-{
-	clientPointer = 0;
-
-	NetworkTransaction *transaction = webserver->currentTransaction;
-	transaction->Write("Invalid or too long request\r\n");
-	transaction->Commit(true);
 }
 
 void Webserver::TelnetInterpreter::ProcessLine()
