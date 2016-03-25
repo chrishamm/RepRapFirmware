@@ -51,7 +51,7 @@
 void SHA1ProcessMessageBlock(SHA1Context *);
 void SHA1PadMessage(SHA1Context *);
 
-/*  
+/*
  *  SHA1Reset
  *
  *  Description:
@@ -70,18 +70,18 @@ void SHA1PadMessage(SHA1Context *);
  */
 void SHA1Reset(SHA1Context *context)
 {
-    context->Length_Low             = 0;
-    context->Length_High            = 0;
-    context->Message_Block_Index    = 0;
+	context->Length_Low             = 0;
+	context->Length_High            = 0;
+	context->Message_Block_Index    = 0;
 
-    context->Message_Digest[0]      = 0x67452301;
-    context->Message_Digest[1]      = 0xEFCDAB89;
-    context->Message_Digest[2]      = 0x98BADCFE;
-    context->Message_Digest[3]      = 0x10325476;
-    context->Message_Digest[4]      = 0xC3D2E1F0;
+	context->Message_Digest[0]      = 0x67452301;
+	context->Message_Digest[1]      = 0xEFCDAB89;
+	context->Message_Digest[2]      = 0x98BADCFE;
+	context->Message_Digest[3]      = 0x10325476;
+	context->Message_Digest[4]      = 0xC3D2E1F0;
 
-    context->Computed   = 0;
-    context->Corrupted  = 0;
+	context->Computed   = 0;
+	context->Corrupted  = 0;
 }
 
 /*  
@@ -101,12 +101,12 @@ void SHA1Reset(SHA1Context *context)
  *  Comments:
  *
  */
-int SHA1Result(SHA1Context *context)
+bool SHA1Result(SHA1Context *context)
 {
 
     if (context->Corrupted)
     {
-        return 0;
+        return false;
     }
 
     if (!context->Computed)
@@ -115,7 +115,7 @@ int SHA1Result(SHA1Context *context)
         context->Computed = 1;
     }
 
-    return 1;
+    return true;
 }
 
 /*  
@@ -140,18 +140,16 @@ int SHA1Result(SHA1Context *context)
  *  Comments:
  *
  */
-void SHA1Input(     SHA1Context         *context,
-                    const unsigned char *message_array,
-                    unsigned            length)
+void SHA1Input(SHA1Context* context, const uint8_t* message_array, uint32_t length)
 {
-    if (!length)
+    if (length == 0)
     {
         return;
     }
 
     if (context->Computed || context->Corrupted)
     {
-        context->Corrupted = 1;
+        context->Corrupted = true;
         return;
     }
 
@@ -171,7 +169,7 @@ void SHA1Input(     SHA1Context         *context,
             if (context->Length_High == 0)
             {
                 /* Message is too long */
-                context->Corrupted = 1;
+                context->Corrupted = true;
             }
         }
 
@@ -206,17 +204,17 @@ void SHA1Input(     SHA1Context         *context,
  */
 void SHA1ProcessMessageBlock(SHA1Context *context)
 {
-    const unsigned K[] =            /* Constants defined in SHA-1   */      
+    const uint32_t K[] =            /* Constants defined in SHA-1   */
     {
         0x5A827999,
         0x6ED9EBA1,
         0x8F1BBCDC,
         0xCA62C1D6
     };
-    int         t;                  /* Loop counter                 */
-    unsigned    temp;               /* Temporary word value         */
-    unsigned    W[80];              /* Word sequence                */
-    unsigned    A, B, C, D, E;      /* Word buffers                 */
+    int32_t         t;                  /* Loop counter                 */
+    uint32_t    temp;               /* Temporary word value         */
+    uint32_t    W[80];              /* Word sequence                */
+    uint32_t    A, B, C, D, E;      /* Word buffers                 */
 
     /*
      *  Initialize the first 16 words in the array W
