@@ -815,7 +815,6 @@ void Platform::Exit()
 		if (files[i]->inUse)
 		{
 			files[i]->Close();
-			files[i]->CloseFSO();
 		}
 	}
 
@@ -918,7 +917,7 @@ void Platform::Spin()
 		if (files[i]->closeRequested)
 		{
 			// We cannot do this in ISRs, so do it here
-			files[i]->CloseFSO();
+			files[i]->Close();
 		}
 	}
 

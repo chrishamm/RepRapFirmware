@@ -59,8 +59,6 @@ void Move::Init()
 	SetLiveCoordinates(move);
 	SetPositions(move);
 
-	currentFeedrate = DEFAULT_FEEDRATE / MINUTES_TO_SECONDS;
-
 	// Set up default bed probe points. This is only a guess, because we don't know the bed size yet.
 	for (size_t point = 0; point < MAX_PROBE_POINTS; point++)
 	{
@@ -157,22 +155,19 @@ void Move::Spin()
 		if ((!reprap.GetRoland()->Active()) && (unPreparedTime < 0.5 || unPreparedTime + prevMoveTime < 2.0))
 		{
 			// If there's a G Code move available, add it to the DDA ring for processing.
-			float nextMove[DRIVES + 1];
-			EndstopChecks endStopsToCheck;
-			uint8_t moveType;
-			FilePosition filePos;
-			if (reprap.GetGCodes()->ReadMove(nextMove, endStopsToCheck, moveType, filePos))
+			GCodes::RawMove nextMove;
+			if (reprap.GetGCodes()->ReadMove(nextMove))
 			{
-				// We have a new move
-				currentFeedrate = nextMove[DRIVES];		// might be G1 with just an F field
-
 				// Apply the extrusion factors here and record the original values
 				float rawExtrDiffs[DRIVES - AXES];
 				for(size_t extruder = 0; extruder < DRIVES - AXES; extruder++)
 				{
-					const float extrDiff = nextMove[extruder + AXES];
+					const float extrDiff = nextMove.coords[extruder + AXES];
 					rawExtrDiffs[extruder] = extrDiff;
-					nextMove[extruder + AXES] = extrDiff * extrusionFactors[extruder];
+					if (!nextMove.isFirmwareRetraction)
+					{
+						nextMove.coords[extruder + AXES] = extrDiff * extrusionFactors[extruder];
+					}
 				}
 
 #if 0	//*** This code is not finished yet ***
@@ -186,39 +181,39 @@ void Move::Spin()
 				do
 				{
 					float tempMove[DRIVES + 1];
-					memcpy(tempMove, nextMove, sizeof(tempMove));
+					memcpy(tempMove, nextMove.coords, sizeof(tempMove));
 					isSegmented = SegmentMove(tempMove);
 					if (isSegmented)
 					{
 						// Extruder moves are relative, so we need to adjust the extrusion amounts in the original move
 						for (size_t drive = AXES; drive < DRIVES; ++drive)
 						{
-							nextMove[drive] -= tempMove[drive];
+							nextMove.coords[drive] -= tempMove[drive];
 						}
 					}
 
-					bool doMotorMapping = (moveType == 0) || (moveType == 1 && !IsDeltaMode());
+					bool doMotorMapping = (nextMove.moveType == 0) || (nextMove.moveType == 1 && !IsDeltaMode());
 					if (doMotorMapping)
 					{
 						Transform(tempMove);
 					}
 
-					const float feedRate = (endStopsToCheck == 0) ? currentFeedrate * speedFactor : currentFeedrate;
-					if (ddaRingAddPointer->Init(tempMove, feedRate, endStopsToCheck, doMotorMapping, filePos, rawEDistances))
+					const float feedRate = (nextMove.endStopsToCheck == 0) ? nextMove.feedRate * speedFactor : nextMove.feedRate;
+					if (ddaRingAddPointer->Init(tempMove, feedRate, nextMove.endStopsToCheck, doMotorMapping, nextMove.filePos, rawEDistances))
 					{
 						ddaRingAddPointer = ddaRingAddPointer->GetNext();
 						idleCount = 0;
 					}
 				} while (isSegmented);
 #else	// Use old code
-				bool doMotorMapping = (moveType == 0) || (moveType == 1 && !IsDeltaMode());
+				bool doMotorMapping = (nextMove.moveType == 0) || (nextMove.moveType == 1 && !IsDeltaMode());
 				if (doMotorMapping)
 				{
-					Transform(nextMove);
+					Transform(nextMove.coords);
 				}
 
-				const float feedRate = (endStopsToCheck == 0) ? currentFeedrate * speedFactor : currentFeedrate;
-				if (ddaRingAddPointer->Init(nextMove, feedRate, endStopsToCheck, doMotorMapping, filePos, rawExtrDiffs))
+				const float feedRate = (nextMove.endStopsToCheck == 0 && !nextMove.isFirmwareRetraction) ? nextMove.feedRate * speedFactor : nextMove.feedRate;
+				if (ddaRingAddPointer->Init(nextMove.coords, feedRate, nextMove.endStopsToCheck, doMotorMapping, nextMove.filePos, rawExtrDiffs))
 				{
 					ddaRingAddPointer = ddaRingAddPointer->GetNext();
 					idleCount = 0;
@@ -309,6 +304,7 @@ void Move::Spin()
 // Returns the file position of the first queue move we are going to skip, or NO_FILE_POSITION we we are not skipping any moves,
 // and the number of skipped moves so the GCodes class can deal with them.
 // We update 'positions' to the positions and feed rate expected for the next move, and the amount of extrusion in the moves we skipped.
+// If we are not skipping any moves then the feed rate is left alone, therefore the caller should set this up first.
 FilePosition Move::PausePrint(float positions[DRIVES+1], unsigned int &skippedMoves)
 {
 	// Find a move we can pause after.
@@ -394,7 +390,7 @@ FilePosition Move::PausePrint(float positions[DRIVES+1], unsigned int &skippedMo
 	}
 	else
 	{
-		GetCurrentUserPosition(positions, 0);		// gets positions and feed rate, and clears out extrusion values
+		GetCurrentUserPosition(positions, 0);		// gets positions and clears out extrusion values
 	}
 
 	return fPos;
@@ -442,20 +438,6 @@ void Move::EndPointToMachine(const float coords[], int32_t ep[], size_t numDrive
 	for (size_t drive = AXES; drive < numDrives; ++drive)
 	{
 		ep[drive] = MotorEndPointToMachine(drive, coords[drive]);
-	}
-}
-
-void Move::SetFeedrate(float feedRate)
-{
-	if (DDARingEmpty())
-	{
-		DDA *lastMove = ddaRingAddPointer->GetPrevious();
-		currentFeedrate = feedRate;
-		lastMove->SetFeedRate(feedRate);
-	}
-	else
-	{
-		reprap.GetPlatform()->Message(GENERIC_MESSAGE, "Error: SetFeedrate called when DDA ring not empty\n");
 	}
 }
 
@@ -1258,7 +1240,7 @@ void Move::ZProbeTriggered(DDA* hitDDA)
 }
 
 // Return the untransformed machine coordinates
-void Move::GetCurrentMachinePosition(float m[DRIVES + 1], bool disableMotorMapping) const
+void Move::GetCurrentMachinePosition(float m[DRIVES], bool disableMotorMapping) const
 {
 	DDA *lastQueuedMove = ddaRingAddPointer->GetPrevious();
 	for (size_t i = 0; i < DRIVES; i++)
@@ -1272,7 +1254,6 @@ void Move::GetCurrentMachinePosition(float m[DRIVES + 1], bool disableMotorMappi
 			m[i] = 0.0;
 		}
 	}
-	m[DRIVES] = currentFeedrate;
 }
 
 /*static*/ float Move::MotorEndpointToPosition(int32_t endpoint, size_t drive)
@@ -1290,7 +1271,7 @@ bool Move::IsExtruding() const
 }
 
 // Return the transformed machine coordinates
-void Move::GetCurrentUserPosition(float m[DRIVES + 1], uint8_t moveType) const
+void Move::GetCurrentUserPosition(float m[DRIVES], uint8_t moveType) const
 {
 	GetCurrentMachinePosition(m, moveType == 2 || (moveType == 1 && IsDeltaMode()));
 	if (moveType == 0)

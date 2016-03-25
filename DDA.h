@@ -30,7 +30,7 @@ class DDA
 
 		DDA(DDA* n);
 
-		bool Init(const float nextMove[], float feedRate, EndstopChecks ce,
+		bool Init(const float nextMove[], float reqSpeed, EndstopChecks ce,
 				bool doMotorMapping, FilePosition fPos,
 				const float rawExtrDists[DRIVES - AXES]);						// Set up a new move, returning true if it represents real movement
 		void Init();															// Set up initial positions for machine startup

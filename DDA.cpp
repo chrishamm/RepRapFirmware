@@ -80,7 +80,7 @@ void DDA::Init()
 }
 
 // Set up a real move. Return true if it represents real movement, else false.
-bool DDA::Init(const float nextMove[], float feedRate, EndstopChecks ce, bool doMotorMapping, FilePosition fPos, const float rawExtrDists[DRIVES - AXES])
+bool DDA::Init(const float nextMove[], float reqSpeed, EndstopChecks ce, bool doMotorMapping, FilePosition fPos, const float rawExtrDists[DRIVES - AXES])
 {
 	// 1. Compute the new endpoints and the movement vector
 	const int32_t *positionNow = prev->DriveCoordinates();
@@ -264,7 +264,6 @@ bool DDA::Init(const float nextMove[], float feedRate, EndstopChecks ce, bool do
 
 	// Set the speed to the smaller of the requested and maximum speed.
 	// Also enforce a minimum speed of 0.5mm/sec. We need a minimum speed to avoid overflow in the movement calculations.
-	float reqSpeed = feedRate;
 	if (isSpecialDeltaMove)
 	{
 		// Special case of a raw or homing move on a delta printer

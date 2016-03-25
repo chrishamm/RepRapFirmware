@@ -62,9 +62,9 @@ class FileStore
 		bool Read(char& b);									// Read 1 byte
 		int Read(char* buf, size_t nBytes);					// Read a block of nBytes length
 		bool Write(char b);									// Write 1 byte
-		bool Write(const char *s, unsigned int len);		// Write a block of len bytes
+		bool Write(const char *s, size_t len);				// Write a block of len bytes
 		bool Write(const char* s);							// Write a string
-		void Close();										// Shut the file and tidy up. May be called by ISR
+		bool Close();										// Shut the file and tidy up. May be called from ISR
 		FilePosition Position() const { return position; }	// Get the current file position
 		bool Seek(FilePosition pos);						// Jump to pos in the file
 		bool GoToEnd();										// Position the file at the end (so you can write on the end).
@@ -82,7 +82,6 @@ class FileStore
 		void Init();
 		bool Open(const char* directory, const char* fileName, bool write);
 		bool Open(const char* filePath, bool write);
-		void CloseFSO();
 
 	private:
 		volatile bool inUse;
@@ -93,7 +92,7 @@ class FileStore
 
 		bool ReadBuffer();
 		bool WriteBuffer();
-		bool InternalWriteBlock(const char *s, unsigned int len);
+		bool InternalWriteBlock(const char *s, size_t len);
 
 		FIL file;
 		Platform* platform;

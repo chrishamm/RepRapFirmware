@@ -876,13 +876,15 @@ class FileData
 
 		bool IsLive() const { return f != nullptr; }
 
-		void Close()
+		bool Close()
 		{
 			if (f != nullptr)
 			{
-				f->Close();
+				bool ok = f->Close();
 				f = nullptr;
+				return ok;
 			}
+			return false;
 		}
 
 		bool Read(char& b)

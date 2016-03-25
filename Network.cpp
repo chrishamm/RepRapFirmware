@@ -96,7 +96,7 @@ static bool closingDataPort = false;
 
 static ConnectionState *sendingConnection = nullptr;
 static uint32_t sendingWindow32[(TCP_WND + 3)/4];						// should be 32-bit aligned for efficiency
-static char *sendingWindow = reinterpret_cast<char *>(sendingWindow32);
+static char * const sendingWindow = reinterpret_cast<char *>(sendingWindow32);
 static uint16_t sendingWindowSize, sentDataOutstanding;
 static uint8_t sendingRetries;
 static err_t writeResult, outputResult;

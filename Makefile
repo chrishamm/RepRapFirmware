@@ -10,7 +10,7 @@ ARDUINO_VERSION := 1.6.7
 GCC_VERSION := 4.8.3-2014q1
 BOSSAC_VERSION := 1.3a-arduino
 
-DUET_BOARD_VERSION := 1.1.4
+DUET_BOARD_VERSION := 1.1.5
 
 # Workspace paths
 LIBRARY_PATH = $(PWD)/Libraries
@@ -88,7 +88,7 @@ LDFLAGS += $(OPTIMIZATION) -Wl,--gc-sections -mcpu=cortex-m3 "-T$(DUET_BOARD_PAT
 # Unfortunately make doesn't support directory wildcards in targets, so instead we must explicitly specify the source paths by using VPATH
 VPATH := $(DUET_BOARD_PATH)/cores/arduino $(DUET_BOARD_PATH)/cores/arduino/USB $(DUET_BOARD_PATH)/variants/duet
 VPATH += $(DUET_LIBRARY_PATH)/EMAC $(DUET_LIBRARY_PATH)/Lwip/lwip/src/api $(DUET_LIBRARY_PATH)/Lwip/lwip/src/core $(DUET_LIBRARY_PATH)/Lwip/lwip/src/core/ipv4 $(DUET_LIBRARY_PATH)/Lwip/lwip/src/netif $(DUET_LIBRARY_PATH)/Lwip/lwip/src/sam/netif $(DUET_LIBRARY_PATH)/Lwip/contrib/apps/mdns $(DUET_LIBRARY_PATH)/Lwip/contrib/apps/netbios
-VPATH += $(DUET_LIBRARY_PATH)/Flash $(DUET_LIBRARY_PATH)/SD_HSMCI/utility $(DUET_LIBRARY_PATH)/SPI $(DUET_LIBRARY_PATH)/Wire
+VPATH += $(DUET_LIBRARY_PATH)/Flash $(DUET_LIBRARY_PATH)/Fatfs $(DUET_LIBRARY_PATH)/SD_HSMCI/utility $(DUET_LIBRARY_PATH)/SPI $(DUET_LIBRARY_PATH)/Wire
 VPATH += $(LIBRARY_PATH)/MAX31855 $(LIBRARY_PATH)/MCP4461
 
 C_SOURCES += $(foreach dir,$(VPATH),$(wildcard $(dir)/*.c)) $(wildcard $(PWD)/*.c)

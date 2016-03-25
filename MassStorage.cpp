@@ -357,43 +357,59 @@ void FileStore::Duplicate()
 		platform->Message(GENERIC_MESSAGE, "Error: Attempt to dup a non-open file.\n");
 		return;
 	}
+	irqflags_t flags = cpu_irq_save();
 	++openCount;
+	cpu_irq_restore(flags);
 }
 
-// May be called from ISR
-void FileStore::Close()
+// This may be called from an ISR, in which case we need to defer the close
+bool FileStore::Close()
 {
+	if (inInterrupt())
+	{
+		if (!inUse)
+		{
+			return false;
+		}
+
+		irqflags_t flags = cpu_irq_save();
+		if (openCount > 1)
+		{
+			--openCount;
+		}
+		else
+		{
+			closeRequested = true;
+		}
+		cpu_irq_restore(flags);
+		return true;
+	}
+
 	if (!inUse)
 	{
 		platform->Message(GENERIC_MESSAGE, "Error: Attempt to close a non-open file.\n");
-		return;
+		return false;
 	}
 
+	irqflags_t flags = cpu_irq_save();
 	--openCount;
-	if (openCount == 0)
-	{
-		closeRequested = true;
-	}
-}
+	bool leaveOpen = (openCount != 0);
+	cpu_irq_restore(flags);
 
-void FileStore::CloseFSO()
-{
-	// Flush all remaining data
+	if (leaveOpen)
+	{
+		return true;
+	}
+
 	bool ok = true;
 	if (writing)
 	{
 		ok = Flush();
 	}
 
-	// Close the FatFS file. Report an error if anything went wrong
 	FRESULT fr = f_close(&file);
-	if (!ok || fr != FR_OK)
-	{
-		platform->Message(GENERIC_MESSAGE, "Error: Could not close file.\n");
-	}
-
-	// Reset this one agaain
 	Init();
+	return ok && fr == FR_OK;
 }
 
 bool FileStore::Seek(FilePosition pos)
