@@ -128,6 +128,7 @@ const float FILAMENT_WIDTH = 1.75;						// Millimetres
 #define FOUR04_PAGE_FILE "html404.htm"
 
 // Filesystem and upload defaults
+const size_t FILE_HASH_BLOCK_SIZE = 256;				// The number of bytes to read and hash per Spin() when computing SHA1 (M38)
 
 #define FS_PREFIX "0:"
 #define GCODE_DIR "0:/gcodes/"							// Place to find G-Code files on the SD card

@@ -486,6 +486,7 @@ bool FileStore::Read(char& b)
 }
 
 // Block read, doesn't use the buffer but invalidates it. Returns -1 if the read process failed
+// Returns the number of bytes actually read
 int FileStore::Read(char* extBuf, size_t nBytes)
 {
 	if (!inUse)
