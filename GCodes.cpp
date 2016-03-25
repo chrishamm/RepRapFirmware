@@ -127,6 +127,8 @@ void GCodes::Reset()
 	simulating = false;
 	simulationTime = 0.0;
 	filePos = moveFilePos = NO_FILE_POSITION;
+
+	isHashing = false;
 }
 
 void GCodes::Spin()
@@ -3325,6 +3327,31 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			}
 			break;
 
+		// M38 - Report SHA1 of file
+		// Can take some time. All the actual heavy lifting is in dedicated methods.
+		case 38:
+		{
+			if (isHashing)
+			{
+				if (advanceHash())
+				{
+					reportHash();
+					return true;
+				}
+			}
+			else
+			{
+				const char* filename = gb->GetUnprecedentedString(true);
+
+				if (!startHash(filename, gb))
+				{
+					reply.printf("Cannot find file");
+				}
+			}
+
+			return false;
+
+		}
 		case 42: // Switch I/O pin
 			if(gb->Seen('P'))
 			{
@@ -5725,6 +5752,67 @@ bool GCodes::IsRunning() const
 	return (pauseStatus == PauseStatus::NotPaused);
 }
 
+// M38 (SHA1 hash of a file) implementation:
+bool GCodes::startHash(const char* filename, GCodeBuffer* source)
+{
+	if (filename == NULL)
+	{
+		return false;
+	}
+
+	// Get a FileStore object
+	fileBeingHashed = platform->GetFileStore(filename, false);
+
+	if (fileBeingHashed == NULL)
+	{
+		return false;
+	}
+
+	isHashing = true;
+	hashGCodeSource = source;
+	SHA1Reset(&hash);
+
+	return true;
+}
+
+bool GCodes::advanceHash()
+{
+	if (!isHashing)
+	{
+		platform->Message(HOST_MESSAGE, "Attempting to advance hash but no hash in progress!");
+		return false; // I suppose there's no more data...
+	}
+
+	if (fileBeingHashed->Position() >= fileBeingHashed->Length())
+	{
+		return true;
+	}
+
+	char buffer[FILE_HASH_BLOCK_SIZE];
+
+	int bytesRead = fileBeingHashed->Read(&buffer[0], FILE_HASH_BLOCK_SIZE);
+
+	SHA1Input(&hash, (const uint8_t*) &buffer[0], FILE_HASH_BLOCK_SIZE);
+
+	return false;
+}
+
+void GCodes::reportHash()
+{
+	SHA1Result(&hash);
+
+	char replyBuffer[LONG_STRING_LENGTH];
+	StringRef reply(replyBuffer, ARRAY_SIZE(replyBuffer));
+	reply.Clear();
+
+	for (uint8_t i = 0; i < 5; i++) {
+		reply.catf("%x", hash.Message_Digest[i]);
+	}
+
+	HandleReply(hashGCodeSource, false, reply.Pointer());
+
+	isHashing = false;
+}
 //*************************************************************************************
 
 // This class is used to ensure codes are executed in the right order and independently from the look-ahead queue.

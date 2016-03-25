@@ -23,6 +23,7 @@ Licence: GPL
 #define GCODES_H
 
 #include "GCodeBuffer.h"
+#include "Libraries/sha1/sha1.h"
 
 const size_t STACK = 5;								// Maximum depth of the stack
 
@@ -164,6 +165,10 @@ class GCodes
 		bool ToolHeatersAtSetTemperatures(const Tool *tool) const;	// Wait for the heaters associated with the specified tool to reach their set temperatures
 		void SetAllAxesNotHomed();									// Flag all axes as not homed
 
+		bool startHash(const char* filename, GCodeBuffer* source);	// Indicates we are now in the state of hashing the given file. Returns false if file does not exist, or cannot be opened.
+		bool advanceHash();											// Reads the next HASH_BLOCK_SIZE bytes from the file being hashed, and advances the SHA1 calculation on this data. Returns true if there is no more data to read.
+		void reportHash();											// Returns the hash result to the host. Exits the state of hashing a file.
+
 		Platform* platform;											// The RepRap machine
 		bool active;												// Live and running?
 		Webserver* webserver;										// The webserver class
@@ -239,6 +244,10 @@ class GCodes
 		FilePosition filePos;										// The position we got up to in the file being printed
 		FilePosition moveFilePos;									// Saved version of filePos for the next real move to be processed
 		bool isFlashing;											// Is a new firmware binary going to be flashed?
+		bool isHashing;												// Are we currently hashing a file (M38)?
+		FileStore* fileBeingHashed;									// If we are currently hashing, this is the file we are hashing
+		SHA1Context hash;											// The SHA1 accumulator
+		GCodeBuffer* hashGCodeSource;								// The source that issued the M38, so the reply can be sent to it
 };
 
 //*****************************************************************************************************
