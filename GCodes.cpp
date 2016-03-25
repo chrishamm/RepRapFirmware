@@ -3346,7 +3346,8 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 				if (!startHash(filename, gb))
 				{
 					reply.printf("Cannot find file\n");
-					return true;
+					result = true;
+					break;
 				}
 			}
 
