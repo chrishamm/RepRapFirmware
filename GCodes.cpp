@@ -3345,7 +3345,8 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 
 				if (!startHash(filename, gb))
 				{
-					reply.printf("Cannot find file");
+					reply.printf("Cannot find file\n");
+					return true;
 				}
 			}
 
@@ -5808,6 +5809,8 @@ void GCodes::reportHash()
 	for (uint8_t i = 0; i < 5; i++) {
 		reply.catf("%x", hash.Message_Digest[i]);
 	}
+
+	reply.catf("\n");
 
 	HandleReply(hashGCodeSource, false, reply.Pointer());
 
