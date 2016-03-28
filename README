@@ -172,7 +172,7 @@ Compiling the firmware is fairly easy on *nix-based operating systems. All you n
 
 in the source code folder. On Windows, you can use the corresponding PowerShell script instead:
 
-  powershell.exe -ExecutionPolicy Unrestricted -FileName .\Make.ps1
+  powershell.exe -ExecutionPolicy Unrestricted -File .\Make.ps1
 
 Once a firmware binary has been generated, both Makefiles can be further used to upload the generated output file to the erased electronics
 board:
@@ -181,7 +181,7 @@ board:
 
 or on Windows
 
-  powershell.exe -ExecutionPolicy Unrestricted -FileName .\Make.ps1 upload
+  powershell.exe -ExecutionPolicy Unrestricted -File .\Make.ps1 upload
 
 In order to take advantage of more sophisticated development conditions, a clang configuration file is included in this directory. It may be used,
 for example, with vim-clang. If you decide to use it, just don't forget to set your clang C options to '-std=gnu99' and your CPP flags to '-std=gnu++11'.
