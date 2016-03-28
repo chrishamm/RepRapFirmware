@@ -71,7 +71,7 @@ LD := $(GCC_PATH)/bin/$(CROSS_COMPILE)gcc
 OBJCOPY := $(GCC_PATH)/bin/$(CROSS_COMPILE)objcopy
 
 INCLUDES := $(DUET_LIBRARY_PATH)/Flash $(DUET_LIBRARY_PATH)/EMAC $(DUET_LIBRARY_PATH)/Lwip $(DUET_LIBRARY_PATH)/SD_HSMCI $(DUET_LIBRARY_PATH)/SD_HSMCI/utility $(DUET_LIBRARY_PATH)/SPI $(DUET_LIBRARY_PATH)/Wire
-INCLUDES += $(LIBRARY_PATH)/MAX31855 $(LIBRARY_PATH)/MCP4461
+INCLUDES += $(LIBRARY_PATH)/MAX31855 $(LIBRARY_PATH)/MCP4461 ${LIBRARY_PATH}/sha1
 INCLUDES += $(DUET_BOARD_PATH)/cores/arduino $(DUET_BOARD_PATH)/variants/duet
 INCLUDES += $(DUET_BOARD_PATH)/system/libsam $(DUET_BOARD_PATH)/system/libsam/include $(DUET_BOARD_PATH)/system/CMSIS/CMSIS/Include $(DUET_BOARD_PATH)/system/CMSIS/Device/ATMEL
 
@@ -89,7 +89,7 @@ LDFLAGS += $(OPTIMIZATION) -Wl,--gc-sections -mcpu=cortex-m3 "-T$(DUET_BOARD_PAT
 VPATH := $(DUET_BOARD_PATH)/cores/arduino $(DUET_BOARD_PATH)/cores/arduino/USB $(DUET_BOARD_PATH)/variants/duet
 VPATH += $(DUET_LIBRARY_PATH)/EMAC $(DUET_LIBRARY_PATH)/Lwip/lwip/src/api $(DUET_LIBRARY_PATH)/Lwip/lwip/src/core $(DUET_LIBRARY_PATH)/Lwip/lwip/src/core/ipv4 $(DUET_LIBRARY_PATH)/Lwip/lwip/src/netif $(DUET_LIBRARY_PATH)/Lwip/lwip/src/sam/netif $(DUET_LIBRARY_PATH)/Lwip/contrib/apps/mdns $(DUET_LIBRARY_PATH)/Lwip/contrib/apps/netbios
 VPATH += $(DUET_LIBRARY_PATH)/Flash $(DUET_LIBRARY_PATH)/Fatfs $(DUET_LIBRARY_PATH)/SD_HSMCI/utility $(DUET_LIBRARY_PATH)/SPI $(DUET_LIBRARY_PATH)/Wire
-VPATH += $(LIBRARY_PATH)/MAX31855 $(LIBRARY_PATH)/MCP4461
+VPATH += $(LIBRARY_PATH)/MAX31855 $(LIBRARY_PATH)/MCP4461 ${LIBRARY_PATH}/sha1
 
 C_SOURCES += $(foreach dir,$(VPATH),$(wildcard $(dir)/*.c)) $(wildcard $(PWD)/*.c)
 CPP_SOURCES := $(foreach dir,$(VPATH),$(wildcard $(dir)/*.cpp)) $(wildcard $(PWD)/*.cpp)

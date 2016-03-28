@@ -131,6 +131,7 @@ void GCodes::Reset()
 	simulating = false;
 	simulationTime = 0.0;
 	filePos = moveBuffer.filePos = NO_FILE_POSITION;
+	hashGCodeSource = nullptr;
 }
 
 void GCodes::Spin()
@@ -3382,6 +3383,38 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 			}
 			break;
 
+		case 38: // Report SHA1 of file
+			if (hashGCodeSource == nullptr)
+			{
+				// See if we can open the file and start hashing
+				const char* filename = gb->GetUnprecedentedString(true);
+				if (StartHash(filename, gb))
+				{
+					hashGCodeSource = gb;
+					result = false;
+				}
+				else
+				{
+					error = true;
+					reply.printf("Cannot open file: %s\n", filename);
+				}
+			}
+			else if (gb == hashGCodeSource)
+			{
+				// This can take some time. All the actual heavy lifting is in dedicated methods
+				result = AdvanceHash(reply);
+				if (result)
+				{
+					hashGCodeSource = nullptr;
+				}
+			}
+			else
+			{
+				// Another G-code source is still hashing a file, wait for it first
+				result = false;
+			}
+			break;
+
 		case 42: // Switch I/O pin
 			if(gb->Seen('P'))
 			{
@@ -5811,6 +5844,53 @@ bool GCodes::IsResuming() const
 bool GCodes::IsRunning() const
 {
 	return (pauseStatus == PauseStatus::NotPaused);
+}
+
+// M38 (SHA1 hash of a file) implementation:
+bool GCodes::StartHash(const char* filename, const GCodeBuffer* source)
+{
+	// Get a FileStore object
+	fileBeingHashed = platform->GetFileStore(FS_PREFIX, filename, false);
+	if (fileBeingHashed == nullptr)
+	{
+		return false;
+	}
+
+	// Start hashing
+	SHA1Reset(&hash);
+	return true;
+}
+
+bool GCodes::AdvanceHash(StringRef &reply)
+{
+	// Read and process some more data from the file
+	uint32_t buf32[(FILE_BUFFER_SIZE + 3) / 4];
+	char *buffer = reinterpret_cast<char *>(buf32);
+
+	int bytesRead = fileBeingHashed->Read(buffer, FILE_BUFFER_SIZE);
+	if (bytesRead != -1)
+	{
+		SHA1Input(&hash, reinterpret_cast<const uint8_t *>(buffer), bytesRead);
+
+		if (bytesRead != FILE_BUFFER_SIZE)
+		{
+			// Calculate and report the final result
+			SHA1Result(&hash);
+			for(size_t i = 0; i < 5; i++)
+			{
+				reply.catf("%x", hash.Message_Digest[i]);
+			}
+
+			// Clean up again
+			fileBeingHashed->Close();
+			return true;
+		}
+		return false;
+	}
+
+	// Something went wrong, we cannot read any more from the file
+	fileBeingHashed->Close();
+	return true;
 }
 
 //*************************************************************************************
