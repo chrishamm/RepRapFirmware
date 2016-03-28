@@ -589,7 +589,7 @@ bool PrintMonitor::GetFileInfoResponse(const char *filename, OutputBuffer *&resp
 	if (filename != nullptr && filename[0] != 0)
 	{
 		GCodeFileInfo info;
-		if (!GetFileInfo("0:/", filename, info))
+		if (!GetFileInfo(FS_PREFIX, filename, info))
 		{
 			// This may take a few runs...
 			return false;

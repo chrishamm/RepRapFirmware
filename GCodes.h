@@ -23,6 +23,7 @@ Licence: GPL
 #define GCODES_H
 
 #include "GCodeBuffer.h"
+#include "sha1.h"
 
 const size_t STACK = 5;								// Maximum depth of the stack
 
@@ -173,6 +174,9 @@ class GCodes
 		void SetAllAxesNotHomed();									// Flag all axes as not homed
 		bool RetractFilament(bool retract);							// Retract or un-retract filaments
 
+		bool StartHash(const char* filename, const GCodeBuffer* source);	// Indicates we are now in the state of hashing the given file. Returns true on success
+		bool AdvanceHash(StringRef &reply);							// Reads the next chunk from the file being hashed, and advances the SHA1 calculation on this data. Returns true when done
+
 		Platform* platform;											// The RepRap machine
 		bool active;												// Live and running?
 		Webserver* webserver;										// The webserver class
@@ -252,6 +256,10 @@ class GCodes
 		float retractLength, retractExtra;							// retraction length and extra length to un-retract
 		float retractSpeed;											// retract speed in mm/min
 		float retractHop;											// Z hop when retracting
+
+		const GCodeBuffer* hashGCodeSource;							// The G-code source that issued the M38
+		FileStore* fileBeingHashed;									// If we are currently hashing, this is the file we are hashing
+		SHA1Context hash;											// The SHA1 accumulator
 };
 
 //*****************************************************************************************************

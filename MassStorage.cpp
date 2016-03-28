@@ -501,7 +501,8 @@ bool FileStore::Read(char& b)
 	return true;
 }
 
-// Block read, doesn't use the buffer but invalidates it. Returns -1 if the read process failed
+// Block read, doesn't use the buffer but invalidates it.
+// Returns the number of bytes read or -1 if the read process failed
 int FileStore::Read(char* extBuf, size_t nBytes)
 {
 	if (!inUse)
