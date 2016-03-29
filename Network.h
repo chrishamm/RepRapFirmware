@@ -202,7 +202,7 @@ class Network
 		NetworkTransaction * volatile readyTransactions;
 		NetworkTransaction * volatile writingTransactions;
 
-		enum { NetworkInactive, NetworkEstablishingLink, NetworkActive } state;
+		enum { NetworkInactive, NetworkEstablishingLink, NetworkObtainingIP, NetworkActive } state;
 		bool isEnabled;
 		volatile bool resetCallback;
 		char hostname[16];								// Limit DHCP hostname to 15 characters + terminating 0

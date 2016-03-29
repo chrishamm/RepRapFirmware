@@ -246,12 +246,11 @@ class Webserver
 				OutputStack *gcodeReply;
 
 				// File uploads
-				uint32_t postFileLength, uploadedBytes;			// How many POST bytes do we expect and how many have already been written?
+				uint32_t postFileLength, uploadedBytes;					// How many POST bytes do we expect and how many have already been written?
 
 				// Deferred requests (rr_fileinfo)
-				bool processingDeferredRequest;					// Are we processing a transaction multiple times to retrieve information?
-				ConnectionState *deferredRequestConnection;		// Which connection expects a response?
-				char filenameBeingProcessed[FILENAME_LENGTH];	// The filename being processed (for rr_fileinfo)
+				ConnectionState * volatile deferredRequestConnection;	// Which connection expects a response for a deferred request?
+				char filenameBeingProcessed[FILENAME_LENGTH];			// The filename being processed (for rr_fileinfo)
 
 				void ProcessDeferredRequest();
 		};
@@ -360,6 +359,7 @@ class Webserver
 
 		bool webserverActive;
 		NetworkTransaction *currentTransaction;
+		ConnectionState * volatile readingConnection;
 
 		float longWait;
 };

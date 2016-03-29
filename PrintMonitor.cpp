@@ -677,7 +677,7 @@ void PrintMonitor::StopParsing(const char *filename)
 {
 	if (parseState != notParsing && StringEquals(filenameBeingParsed, filename))
 	{
-		if (!printingFileParsed)
+		if (filenameBeingPrinted[0] != 0 && !printingFileParsed)
 		{
 			// If this is the file we're parsing for internal purposes, don't bother with this request
 			return;
