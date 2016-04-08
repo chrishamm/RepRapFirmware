@@ -68,7 +68,7 @@ void Roland::Spin()
 			{
 				move[axis] = m.coords[axis];
 			}
-			move[AXES] = move[DRIVES]; // Roland doesn't have extruders etc.
+			move[AXES] = m.feedRate * reprap.GetMove()->GetSpeedFactor();
 			ProcessMove();
 		}
 	}

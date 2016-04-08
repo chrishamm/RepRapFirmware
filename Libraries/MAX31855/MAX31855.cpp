@@ -91,7 +91,7 @@ void MAX31855::Init(uint8_t cs)
 
 // Use our own read routine; the ASF SPI read routines only do 8 bit data transfers
 
-status_code MAX31855::readRaw(uint16_t *raw) const
+spi_status_t MAX31855::readRaw(uint16_t *raw) const
 {
 	for (uint8_t i = 0; i < 2; i++)
 	{
@@ -100,7 +100,7 @@ status_code MAX31855::readRaw(uint16_t *raw) const
 		{
 			if (!timeout--)
 			{
-				return ERR_TMO;
+				return SPI_ERROR_TIMEOUT;
 			}
 		}
 
@@ -111,14 +111,14 @@ status_code MAX31855::readRaw(uint16_t *raw) const
 		{
 			if (!timeout--)
 			{
-				return ERR_TMO;
+				return SPI_ERROR_TIMEOUT;
 			}
 		}
 
 		*raw++ = SPI0->SPI_RDR;
 	}
 
-	return STATUS_OK;
+	return SPI_OK;
 }
 
 MAX31855_error MAX31855::getTemperature(float *t) const
@@ -134,7 +134,7 @@ MAX31855_error MAX31855::getTemperature(float *t) const
 
 	// Read in 32 bits
 	uint16_t raw[2];
-	if (readRaw(raw) != STATUS_OK)
+	if (readRaw(raw) != SPI_OK)
 	{
 		return MAX31855_ERR_TMO;
 	}

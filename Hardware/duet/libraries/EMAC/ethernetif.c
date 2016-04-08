@@ -55,17 +55,8 @@
 #include "lwip/src/include/netif/etharp.h"
 #include "lwip/src/include/netif/ppp_oe.h"
 
-#if 1
-// DC 2015-07-28.
-// The original RepRapPro code has the source files included like this, instead of the header files.
-// I tried including the header files instead, and found that doing so makes file upload unreliable. So leave it like this.
-#include "source/emac.c"
-#include "source/rstc.c"
-#else
-// DC 2015-07-28: this doesn't work, see above.
-//#include "include/emac.h"
-//#include "include/rstc.h"
-#endif
+#include "emac.h"
+#include "rstc.h"
 
 #include "ethernet_phy.h"
 #include "ethernetif.h"

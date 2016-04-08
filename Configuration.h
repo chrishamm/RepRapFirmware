@@ -24,8 +24,8 @@ Licence: GPL
 #define CONFIGURATION_H
 
 #define NAME "RepRapFirmware"
-#define VERSION "1.10-b7-ch"
-#define DATE "2016-03-29"
+#define VERSION "1.11-ch"
+#define DATE "2016-04-08"
 
 #define AUTHORS "reprappro, dc42, chrishamm, t3p3, dnewman"
 
@@ -103,10 +103,12 @@ const size_t GCODE_LENGTH = 100;
 const size_t GCODE_REPLY_LENGTH = 2048;
 const size_t MESSAGE_LENGTH = 256;
 
+const size_t FILENAME_LENGTH = 100;
+
 // Output buffer lengths
 
-const uint16_t OUTPUT_BUFFER_SIZE = 256;				// How many bytes does each OutputBuffer hold?
-const size_t OUTPUT_BUFFER_COUNT = 16;					// How many OutputBuffer instances do we have?
+const uint16_t OUTPUT_BUFFER_SIZE = 128;				// How many bytes does each OutputBuffer hold?
+const size_t OUTPUT_BUFFER_COUNT = 32;					// How many OutputBuffer instances do we have?
 
 // Move system
 

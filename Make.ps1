@@ -6,11 +6,11 @@
 #
 
 # Referenced component versions
-$ARDUINO_VERSION = "1.6.7"
+$ARDUINO_VERSION = "1.6.8"
 $GCC_VERSION = "4.8.3-2014q1"
 $BOSSAC_VERSION = "1.3a-arduino"
 
-$DUET_BOARD_VERSION = "1.1.5"
+$DUET_BOARD_VERSION = "1.1.6"
 
 # Workspace paths
 $LIBRARY_PATH = "$(Get-Location)\Libraries"
@@ -75,12 +75,12 @@ $CXX = "$GCC_PATH\bin\$($CROSS_COMPILE)g++.exe"
 $LD = "$GCC_PATH\bin\$($CROSS_COMPILE)gcc.exe"
 $OBJCOPY = "$GCC_PATH\bin\$($CROSS_COMPILE)objcopy.exe"
 
-$INCLUDES = @("$DUET_LIBRARY_PATH\Flash", "$DUET_LIBRARY_PATH\EMAC", "$DUET_LIBRARY_PATH\Lwip", "$DUET_LIBRARY_PATH\Lwip\lwip\src\include", "$DUET_LIBRARY_PATH\SD_HSMCI", "$DUET_LIBRARY_PATH\SD_HSMCI\utility", "$DUET_LIBRARY_PATH\SPI", "$DUET_LIBRARY_PATH\Wire")
-$INCLUDES += @("$LIBRARY_PATH\MAX31855", "$LIBRARY_PATH\MCP4461")
-$INCLUDES += @("$DUET_BOARD_PATH\cores\arduino", "$DUET_BOARD_PATH\variants\duet")
+$INCLUDES =  @("$DUET_BOARD_PATH\cores\arduino", "$DUET_BOARD_PATH\variants\duet")
 $INCLUDES += @("$DUET_BOARD_PATH\system\libsam", "$DUET_BOARD_PATH\system\libsam\include", "$DUET_BOARD_PATH\system\CMSIS\CMSIS\Include", "$DUET_BOARD_PATH\system\CMSIS\Device\ATMEL")
+$INCLUDES += @("$DUET_LIBRARY_PATH\EMAC", "$(DUET_LIBRARY_PATH)/Flash", "$DUET_LIBRARY_PATH\SPI", "$DUET_LIBRARY_PATH\Storage", "$DUET_LIBRARY_PATH\Wire")
+$INCLUDES += @("LIBRARY_PATH\Fatfs", "$LIBRARY_PATH\Lwip", "$LIBRARY_PATH\MAX31855", "$LIBRARY_PATH\MCP4461", "$LIBRARY_PATH\sha1")
 
-$CFLAGS = "-c -g $OPTIMIZATION -w -ffunction-sections -fdata-sections -nostdlib --param max-inline-insns-single=500 -Dprintf=iprintf -std=gnu99"
+$CFLAGS = "-c -g $OPTIMIZATION -w -ffunction-sections -fdata-sections -nostdlib --param max-inline-insns-single=500 -Dprintf=iprintf -std=gnu11"
 $CPPFLAGS = "-c -g $OPTIMIZATION -w -ffunction-sections -fdata-sections -nostdlib -fno-threadsafe-statics --param max-inline-insns-single=500 -fno-rtti -fno-exceptions -Dprintf=iprintf -std=gnu++11"
 
 $DEVICE_FLAGS = "-mcpu=cortex-m3 -DF_CPU=84000000L -DARDUINO=" + $ARDUINO_VERSION.Replace(".", "") + " -DARDUINO_SAM_DUE -DARDUINO_ARCH_SAM -D__SAM3X8E__ -mthumb -DUSB_VID=0x2341 -DUSB_PID=0x003e -DUSBCON -DUSB_MANUFACTURER=\`"RepRap\`" -DUSB_PRODUCT=\`"Duet\`""
@@ -91,9 +91,9 @@ $CPPFLAGS += $INCLUDES | % { " -I$_" }
 $LDFLAGS_A = "$OPTIMIZATION -Wl,--gc-sections -mcpu=cortex-m3 `"-T$DUET_BOARD_PATH\variants\duet\linker_scripts\gcc\flash.ld`" `"-Wl,-Map,$OUTPUT_DIR\RepRapFirmware.map`" `"-L$BUILD_PATH`" -mthumb -Wl,--cref -Wl,--check-sections -Wl,--gc-sections -Wl,--entry=Reset_Handler -Wl,--unresolved-symbols=report-all -Wl,--warn-common -Wl,--warn-section-align -Wl,--warn-unresolved-symbols -Wl,--start-group"
 $LDFLAGS_B = "`"$DUET_BOARD_PATH\variants\duet\libsam_sam3x8e_gcc_rel.a`" -lm -lgcc -Wl,--end-group"
 
-$SOURCEPATHS = @("$DUET_BOARD_PATH\cores\arduino", "$DUET_BOARD_PATH\cores\arduino\USB", "$DUET_BOARD_PATH\variants\duet")
-$SOURCEPATHS += @("$DUET_LIBRARY_PATH\Lwip\lwip\src\api", "$DUET_LIBRARY_PATH\Lwip\lwip\src\core", "$DUET_LIBRARY_PATH\Lwip\lwip\src\core\ipv4", "$DUET_LIBRARY_PATH\Lwip\lwip\src\netif", "$DUET_LIBRARY_PATH\EMAC","$DUET_LIBRARY_PATH\Lwip\contrib\apps\mdns", "$DUET_LIBRARY_PATH\Lwip\contrib\apps\netbios", "$DUET_LIBRARY_PATH\Flash", "$DUET_LIBRARY_PATH/Fatfs", "$DUET_LIBRARY_PATH\SD_HSMCI\utility", "$DUET_LIBRARY_PATH\SPI", "$DUET_LIBRARY_PATH\Wire")
-$SOURCEPATHS += @("$LIBRARY_PATH\MAX31855", "$LIBRARY_PATH\MCP4461")
+$SOURCEPATHS = @("$DUET_BOARD_PATH\cores\arduino", "$DUET_BOARD_PATH\cores\arduino\USB", "$DUET_BOARD_PATH\system\libsam\source", "$DUET_BOARD_PATH\variants\duet")
+$SOURCEPATHS += @("$DUET_LIBRARY_PATH\EMAC", "$(DUET_LIBRARY_PATH)/Flash", "$DUET_LIBRARY_PATH\SPI", "$DUET_LIBRARY_PATH\Storage", "$DUET_LIBRARY_PATH\Wire")
+$SOURCEPATHS += @("$LIBRARY_PATH\Fatfs", "$LIBRARY_PATH\Lwip\lwip\src\api", "$LIBRARY_PATH\Lwip\lwip\src\core", "$LIBRARY_PATH\Lwip\lwip\src\core\ipv4", "$LIBRARY_PATH\Lwip\lwip\src\netif", "$LIBRARY_PATH\Lwip\contrib\apps\mdns", "$LIBRARY_PATH\Lwip\contrib\apps\netbios", "$LIBRARY_PATH\MAX31855", "$LIBRARY_PATH\MCP4461", "$LIBRARY_PATH\sha1")
 
 $C_SOURCES = $SOURCEPATHS | % { $(Get-ChildItem "$_\*.c") | % { "$_" } }
 $C_SOURCES += Get-ChildItem "$(Get-Location)\*.c" | % { "$_" }

@@ -84,7 +84,7 @@ extern void analogWriteResolution(int res);
  * 
  * \param pin
  */
-extern enum adc_channel_num_t PinToAdcChannel(int pin);
+extern EAnalogChannel PinToAdcChannel(int pin);
 
 #ifdef __cplusplus
 }

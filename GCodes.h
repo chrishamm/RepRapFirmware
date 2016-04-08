@@ -91,6 +91,7 @@ class GCodes
 			EndstopChecks endStopsToCheck;							// endstops to check
 			uint8_t moveType;										// the S parameter from the G0 or G1 command, 0 for a normal move
 			bool isFirmwareRetraction;
+			bool usePressureAdvance;								// true if we want to us extruder pressure advance, if there is any extrusion
 		};
 
 		GCodes(Platform* p, Webserver* w);

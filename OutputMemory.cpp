@@ -13,6 +13,7 @@
 /*static*/ volatile size_t OutputBuffer::usedOutputBuffers = 0;						// so make these volatile.
 /*static*/ volatile size_t OutputBuffer::maxUsedOutputBuffers = 0;
 
+
 //*************************************************************************************************
 // OutputBuffer class implementation
 

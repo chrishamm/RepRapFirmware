@@ -19,6 +19,8 @@
 #ifndef _WIRING_MATH_
 #define _WIRING_MATH_
 
+#include "stdint.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -27,9 +29,10 @@ extern uint32_t trueRandom();
 
 #ifdef __cplusplus
 }
-extern long random( long ) ;
-extern long random( long, long ) ;
-extern long map( long, long, long, long, long ) ;
+
+extern int32_t random( int32_t ) ;
+extern int32_t random( int32_t, int32_t ) ;
+extern int32_t map( int32_t, int32_t, int32_t, int32_t, int32_t ) ;
 
 extern uint16_t makeWord( uint16_t w ) ;
 extern uint16_t makeWord( uint8_t h, uint8_t l ) ;

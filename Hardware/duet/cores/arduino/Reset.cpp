@@ -19,6 +19,9 @@
 #include <Arduino.h>
 #include "Reset.h"
 
+#include "flash_efc.h"
+#include "wdt.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -66,6 +69,35 @@ void tickReset() {
 	ticks--;
 	if (ticks == 0)
 		banzai();
+}
+
+void Reset()
+{
+	rstc_start_software_reset(RSTC);
+	for(;;) {}
+}
+
+// Switch into boot mode and reset
+void EraseAndReset()
+{
+	cpu_irq_disable();
+
+#if SAM3XA_SERIES
+# define IFLASH_ADDR				IFLASH0_ADDR
+# define IFLASH_PAGE_SIZE			IFLASH0_PAGE_SIZE
+# define IFLASH_NB_OF_PAGES			((IFLASH1_ADDR + IFLASH1_SIZE - IFLASH_ADDR) / IFLASH_PAGE_SIZE)
+#endif
+
+	for(size_t i = 0; i <= IFLASH_NB_OF_PAGES; i++)
+	{
+		WDT_Restart(WDT);
+		size_t pageStartAddr = IFLASH_ADDR + i * IFLASH_PAGE_SIZE;
+		flash_unlock(pageStartAddr, pageStartAddr + IFLASH_PAGE_SIZE - 1, nullptr, nullptr);
+	}
+
+	flash_clear_gpnvm(1);			// tell the system to boot from ROM next time
+	rstc_start_software_reset(RSTC);
+	for(;;) {}
 }
 
 #ifdef __cplusplus

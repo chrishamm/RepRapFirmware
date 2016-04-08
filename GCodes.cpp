@@ -30,13 +30,13 @@
 GCodes::GCodes(Platform* p, Webserver* w) :
 	platform(p), active(false), webserver(w), stackPointer(0), fileStackPointer(0), isFlashing(false)
 {
-	httpGCode = new GCodeBuffer(platform, "http: ");
-	telnetGCode = new GCodeBuffer(platform, "telnet: ");
-	fileGCode = new GCodeBuffer(platform, "file: ");
-	serialGCode = new GCodeBuffer(platform, "serial: ");
-	auxGCode = new GCodeBuffer(platform, "aux: ");
-	fileMacroGCode = new GCodeBuffer(platform, "macro: ");
-	queueGCode = new GCodeBuffer(platform, "queue: ");
+	httpGCode = new GCodeBuffer(platform, "http");
+	telnetGCode = new GCodeBuffer(platform, "telnet");
+	fileGCode = new GCodeBuffer(platform, "file");
+	serialGCode = new GCodeBuffer(platform, "serial");
+	auxGCode = new GCodeBuffer(platform, "aux");
+	fileMacroGCode = new GCodeBuffer(platform, "macro");
+	queueGCode = new GCodeBuffer(platform, "queue");
 	auxGCodeReply = nullptr;
 }
 
@@ -116,6 +116,7 @@ void GCodes::Reset()
 	}
 	feedRate = pausedMoveBuffer[DRIVES] = DEFAULT_FEEDRATE / MINUTES_TO_SECONDS;
 	ClearMove();
+	filePos = NO_FILE_POSITION;
 	doPauseMacro = false;
 	fractionOfFilePrinted = -1.0;
 	dwellWaiting = false;
@@ -130,7 +131,6 @@ void GCodes::Reset()
 	auxSeq = 0;
 	simulating = false;
 	simulationTime = 0.0;
-	filePos = moveBuffer.filePos = NO_FILE_POSITION;
 	hashGCodeSource = nullptr;
 }
 
@@ -174,7 +174,7 @@ void GCodes::Spin()
 					if (doingFileMacro)
 					{
 						// Keep track of the current file position in case the running G-code starts another macro file
-						lastMacroPosition = fileBeingPrinted.Position();
+						lastMacroPosition = fileBeingPrinted.GetPosition();
 					}
 					returningFromMacro = true;
 				}
@@ -281,6 +281,10 @@ void GCodes::Spin()
 			char b;
 			if (fileBeingPrinted.Read(b))
 			{
+				if (fileGCode->StartingNewCode())
+				{
+					filePos = fileBeingPrinted.GetPosition() - 1;
+				}
 				if (fileGCode->Put(b))
 				{
 					// Will be acted upon later
@@ -328,7 +332,7 @@ void GCodes::Spin()
 		else if (finished && fileBeingPrinted.IsLive())
 		{
 			// Else keep track of the file position. We may need it again when another nested macro is started
-			lastMacroPosition = fileBeingPrinted.Position();
+			lastMacroPosition = fileBeingPrinted.GetPosition();
 		}
 		fileMacroGCode->SetFinished(finished);
 	}
@@ -369,6 +373,8 @@ void GCodes::Diagnostics()
 {
 	platform->Message(GENERIC_MESSAGE, "GCodes Diagnostics:\n");
 	platform->MessageF(GENERIC_MESSAGE, "Move available? %s\n", moveAvailable ? "yes" : "no");
+	platform->MessageF(GENERIC_MESSAGE, "Stack pointer: %u of %u\n", stackPointer, STACK);
+
 	platform->MessageF(GENERIC_MESSAGE, "Internal code queue is %s\n", (internalCodeQueue == nullptr) ? "empty." : "not empty:");
 	if (internalCodeQueue != nullptr)
 	{
@@ -381,7 +387,14 @@ void GCodes::Diagnostics()
 		} while ((item = item->Next()) != nullptr);
 		platform->MessageF(GENERIC_MESSAGE, "%d of %d codes have been queued.\n", queueLength, CODE_QUEUE_LENGTH);
 	}
-	platform->MessageF(GENERIC_MESSAGE, "Stack pointer: %u of %u\n", stackPointer, STACK);
+
+	fileMacroGCode->Diagnostics();
+	httpGCode->Diagnostics();
+	telnetGCode->Diagnostics();
+	serialGCode->Diagnostics();
+	auxGCode->Diagnostics();
+	queueGCode->Diagnostics();
+	fileGCode->Diagnostics();
 }
 
 // The wait till everything's done function.  If you need the machine to
@@ -683,6 +696,8 @@ int GCodes::SetUpMove(GCodeBuffer *gb, StringRef& reply)
 	}
 
 	// Load the last position and feed rate into moveBuffer
+	const float currentX = moveBuffer.coords[X_AXIS];
+	const float currentY = moveBuffer.coords[Y_AXIS];
 	if (reprap.GetRoland()->Active())
 	{
 		reprap.GetRoland()->GetCurrentRolandPosition(moveBuffer.coords);
@@ -696,6 +711,10 @@ int GCodes::SetUpMove(GCodeBuffer *gb, StringRef& reply)
 	moveAvailable = LoadMoveBufferFromGCode(gb, false, limitAxes && moveBuffer.moveType == 0);
 	if (moveAvailable)
 	{
+		// Flag whether we should use pressure advance, if there is any extrusion in this move.
+		// We assume it is a normal printing move needing pressure advance if there is forward extrusion and XY movement.
+		// The movement code will only apply pressure advance if there is forward extrusion, so we only need to check for XY movement here.
+		moveBuffer.usePressureAdvance = (moveBuffer.coords[X_AXIS] != currentX || moveBuffer.coords[Y_AXIS] != currentY);
 		moveBuffer.filePos = (gb == fileGCode) ? filePos : NO_FILE_POSITION;
 		//debugPrintf("Queue move pos %u\n", moveFilePos);
 	}
@@ -721,6 +740,8 @@ void GCodes::ClearMove()
 	moveBuffer.endStopsToCheck = 0;
 	moveBuffer.moveType = 0;
 	moveBuffer.isFirmwareRetraction = false;
+	moveBuffer.filePos = NO_FILE_POSITION;
+	moveBuffer.usePressureAdvance = false;
 }
 
 bool GCodes::DoFileMacro(const GCodeBuffer *gb, const char* fileName)
@@ -891,8 +912,9 @@ bool GCodes::DoCannedCycleMove(EndstopChecks ce)
 		}
 		moveBuffer.endStopsToCheck = ce;
 		moveBuffer.filePos = NO_FILE_POSITION;
-		cannedCycleMoveQueued = true;
+		moveBuffer.usePressureAdvance = false;
 		moveAvailable = true;
+		cannedCycleMoveQueued = true;
 	}
 	return false;
 }
@@ -2479,7 +2501,10 @@ bool GCodes::RetractFilament(bool retract)
 				{
 					moveBuffer.coords[i] = 0.0;
 				}
-				moveBuffer.feedRate = retractSpeed * SECONDS_TO_MINUTES;		// set the feed rate
+				// Set the feed rate. If there is any Z hop then we need to pass the Z speed, else we pass the extrusion speed.
+				moveBuffer.feedRate = (retractHop == 0.0)
+										? retractSpeed * SECONDS_TO_MINUTES
+										: retractSpeed * SECONDS_TO_MINUTES * retractHop/retractLength;
 				moveBuffer.coords[Z_AXIS] += ((retract) ? retractHop : -retractHop);
 				for (size_t i = 0; i < nDrives; ++i)
 				{
@@ -2487,6 +2512,7 @@ bool GCodes::RetractFilament(bool retract)
 				}
 
 				moveBuffer.isFirmwareRetraction = true;
+				moveBuffer.usePressureAdvance = false;
 				moveBuffer.filePos = filePos;
 				moveAvailable = true;
 			}
@@ -3296,7 +3322,7 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 		case 27: // Report print status - Deprecated
 			if (reprap.GetPrintMonitor()->IsPrinting())
 			{
-				reply.printf("SD printing byte %lu/%lu\n", fileBeingPrinted.Position(), fileBeingPrinted.Length());
+				reply.printf("SD printing byte %lu/%lu\n", fileBeingPrinted.GetPosition(), fileBeingPrinted.Length());
 			}
 			else
 			{
@@ -5074,7 +5100,7 @@ bool GCodes::HandleMcode(GCodeBuffer* gb)
 				}
 				else
 				{
-					reply.printf("Elastic compensation for extruder %u is %.3f seconds\n", extruder, platform->GetElasticComp(extruder));
+					reply.printf("Pressure advance for extruder %u is %.3f seconds\n", extruder, platform->GetElasticComp(extruder));
 				}
 			}
 			break;

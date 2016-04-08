@@ -155,9 +155,12 @@ void Move::Spin()
 		if ((!reprap.GetRoland()->Active()) && (unPreparedTime < 0.5 || unPreparedTime + prevMoveTime < 2.0))
 		{
 			// If there's a G Code move available, add it to the DDA ring for processing.
-			GCodes::RawMove nextMove;
-			if (reprap.GetGCodes()->ReadMove(nextMove))
+			GCodes::RawMove readMove, nextMove;
+			if (reprap.GetGCodes()->ReadMove(readMove))
 			{
+				nextMove = readMove;
+				nextMove.feedRate = (nextMove.endStopsToCheck == 0 && !nextMove.isFirmwareRetraction) ? nextMove.feedRate * speedFactor : nextMove.feedRate;
+
 				// Apply the extrusion factors here and record the original values
 				float rawExtrDiffs[DRIVES - AXES];
 				for(size_t extruder = 0; extruder < DRIVES - AXES; extruder++)
@@ -212,8 +215,7 @@ void Move::Spin()
 					Transform(nextMove.coords);
 				}
 
-				const float feedRate = (nextMove.endStopsToCheck == 0 && !nextMove.isFirmwareRetraction) ? nextMove.feedRate * speedFactor : nextMove.feedRate;
-				if (ddaRingAddPointer->Init(nextMove.coords, feedRate, nextMove.endStopsToCheck, doMotorMapping, nextMove.filePos, rawExtrDiffs))
+				if (ddaRingAddPointer->Init(&nextMove, doMotorMapping, rawExtrDiffs))
 				{
 					ddaRingAddPointer = ddaRingAddPointer->GetNext();
 					idleCount = 0;
