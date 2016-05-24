@@ -40,6 +40,11 @@ void Heat::Init()
 	lastTime = platform->Time();
 	longWait = lastTime;
 	active = true;
+
+	for (int32_t i = 0; i < HEATER_CONTROL_ENTRIES; i++)
+	{
+		heaterControlBits[i] = HEAT_ON ? 0xFF : 0;
+	}
 }
 
 void Heat::Exit()

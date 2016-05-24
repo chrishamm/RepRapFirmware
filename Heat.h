@@ -21,6 +21,11 @@ Licence: GPL
 #ifndef HEAT_H
 #define HEAT_H
 
+// Macro to divide rounding up, courtesy of the GCC documentation site:
+#define ceil_div(x, y) (((x) + (y) - 1) / (y))
+// How many 8-bit integers do we need to record 1 bit per heater?
+#define HEATER_CONTROL_ENTRIES (ceil_div(HEATERS, 8))
+
 /**
  * This class implements a PID controller for the heaters
  */
@@ -117,6 +122,9 @@ class Heat
 		bool UseSlowPwm(int8_t heater) const;						// Queried by the Platform class
 		uint32_t GetLastSampleTime(int8_t heater) const;
 
+		void SetHeaterInversion(int8_t heater, bool inverted);		// Sets whether the given heater has inverted control, or normal control
+		bool IsHeaterInverted(int8_t heater);						// Gets whether the given heater has inverted control or not. If heater is out of range, then the constant HEAT_ON is returned
+
 	private:
 
 		Platform* platform;							// The instance of the RepRap hardware class
@@ -130,6 +138,8 @@ class Heat
 
 		float lastTime;								// The last time our Spin() was called
 		float longWait;								// Long time for things that happen occasionally
+
+		uint8_t heaterControlBits[HEATER_CONTROL_ENTRIES]; // A bit vector that contains 0 at the n-th bit if heater n is inverted, 1 otherwise. n starts at 0
 };
 
 
@@ -300,6 +310,37 @@ inline void Heat::ResetFault(int8_t heater)
 inline bool Heat::UseSlowPwm(int8_t heater) const
 {
 	return (heater == bedHeater || heater == chamberHeater);
+}
+
+inline void Heat::SetHeaterInversion(int8_t heater, bool inverted)
+{
+	if (heater >= 0 && heater < HEATERS)
+	{
+		uint8_t mask = 1 << (heater % 8);
+
+		if (inverted)
+		{
+			// Clear bit
+			heaterControlBits[heater / 8] &= (~mask);
+		}
+		else
+		{
+			// Set bit
+			heaterControlBits[heater / 8] |= mask;
+		}
+
+	}
+}
+
+inline bool Heat::IsHeaterInverted(int8_t heater) {
+	if (heater >= 0 && heater < HEATERS)
+	{
+		uint8_t mask = 1 << (heater % 8);
+
+		return (heaterControlBits[heater / 8] & mask) == 0;
+	}
+
+	return HEAT_ON;
 }
 
 #endif

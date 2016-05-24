@@ -2329,6 +2329,9 @@ void GCodes::SetPidParameters(GCodeBuffer *gb, int heater, StringRef& reply)
 	{
 		PidParameters pp = platform->GetPidParameters(heater);
 		bool seen = false;
+		bool seenInversion = false;
+		bool inverted = false;
+
 		if (gb->Seen('P'))
 		{
 			pp.kP = gb->GetFValue();
@@ -2365,14 +2368,28 @@ void GCodes::SetPidParameters(GCodeBuffer *gb, int heater, StringRef& reply)
 			seen = true;
 		}
 
-		if (seen)
+		if (gb->Seen('C'))
 		{
-			platform->SetPidParameters(heater, pp);
+			inverted = gb->GetIValue() > 0;
+			seenInversion = true;
+		}
+
+		if (seen || seenInversion)
+		{
+			if (seen)
+			{
+				platform->SetPidParameters(heater, pp);
+			}
+			if (seenInversion)
+			{
+				reprap.GetHeat()->SetHeaterInversion(heater, inverted);
+			}
 		}
 		else
 		{
-			reply.printf("Heater %d P:%.2f I:%.3f D:%.2f T:%.2f S:%.2f W:%.1f B:%.1f\n",
-					    heater, pp.kP, pp.kI * platform->HeatSampleTime(), pp.kD / platform->HeatSampleTime(), pp.kT, pp.kS, pp.pidMax, pp.fullBand);
+			reply.printf("Heater %d P:%.2f I:%.3f D:%.2f T:%.2f S:%.2f W:%.1f B:%.1f C:%d\n",
+					    heater, pp.kP, pp.kI * platform->HeatSampleTime(), pp.kD / platform->HeatSampleTime(), pp.kT, pp.kS, pp.pidMax, pp.fullBand,
+						reprap.GetHeat()->IsHeaterInverted(heater));
 		}
 	}
 }
