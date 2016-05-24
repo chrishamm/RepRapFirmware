@@ -2370,7 +2370,7 @@ void GCodes::SetPidParameters(GCodeBuffer *gb, int heater, StringRef& reply)
 
 		if (gb->Seen('C'))
 		{
-			inverted = gb->GetIValue() > 0;
+			inverted = gb->GetIValue() != 0;
 			seenInversion = true;
 		}
 
