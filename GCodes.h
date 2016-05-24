@@ -23,7 +23,7 @@ Licence: GPL
 #define GCODES_H
 
 #include "GCodeBuffer.h"
-#include "Libraries/sha1/sha1.h"
+#include "sha1.h"
 
 const size_t STACK = 5;								// Maximum depth of the stack
 
@@ -83,6 +83,16 @@ enum class PauseStatus
 class GCodes
 {
 	public:
+		struct RawMove
+		{
+			float coords[DRIVES];									// new positions for the axes, amount of movement for the extruders
+			float feedRate;											// feed rate of this move
+			FilePosition filePos;									// offset in the file being printed that this move was read from
+			EndstopChecks endStopsToCheck;							// endstops to check
+			uint8_t moveType;										// the S parameter from the G0 or G1 command, 0 for a normal move
+			bool isFirmwareRetraction;
+			bool usePressureAdvance;								// true if we want to us extruder pressure advance, if there is any extrusion
+		};
 
 		GCodes(Platform* p, Webserver* w);
 		void Spin();												// Called in a tight loop to make this class work
@@ -90,8 +100,7 @@ class GCodes
 		void Exit();												// Shut it down
 		void Reset();												// Reset some parameter to defaults
 		bool DoFileMacro(const GCodeBuffer *gb, const char* fileName);	// Run a macro file. gb may be nullptr if called by an external class
-		bool ReadMove(float* m, EndstopChecks& ce,
-				uint8_t& rMoveType, FilePosition& fPos);			// Called by the Move class to get a movement set by the last G Code
+		bool ReadMove(RawMove& m);									// Called by the Move class to get a movement set by the last G Code
 		void ClearMove();
 		void QueueFileToPrint(const char* fileName);				// Open a file of G Codes to run
 		void DeleteFile(const char* fileName);						// Does what it says
@@ -164,10 +173,10 @@ class GCodes
 		bool ChangeTool(GCodeBuffer *gb, int newToolNumber);		// Select a new tool
 		bool ToolHeatersAtSetTemperatures(const Tool *tool) const;	// Wait for the heaters associated with the specified tool to reach their set temperatures
 		void SetAllAxesNotHomed();									// Flag all axes as not homed
+		bool RetractFilament(bool retract);							// Retract or un-retract filaments
 
-		bool startHash(const char* filename, GCodeBuffer* source);	// Indicates we are now in the state of hashing the given file. Returns false if file does not exist, or cannot be opened.
-		bool advanceHash();											// Reads the next HASH_BLOCK_SIZE bytes from the file being hashed, and advances the SHA1 calculation on this data. Returns true if there is no more data to read.
-		void reportHash();											// Returns the hash result to the host. Exits the state of hashing a file.
+		bool StartHash(const char* filename, const GCodeBuffer* source);	// Indicates we are now in the state of hashing the given file. Returns true on success
+		bool AdvanceHash(StringRef &reply);							// Reads the next chunk from the file being hashed, and advances the SHA1 calculation on this data. Returns true when done
 
 		Platform* platform;											// The RepRap machine
 		bool active;												// Live and running?
@@ -182,11 +191,10 @@ class GCodes
 		GCodeBuffer* fileMacroGCode;								// ...
 		GCodeBuffer* queueGCode;									// ... of G Codes
 		bool moveAvailable;											// Have we seen a move G Code and set it up?
-		float moveBuffer[DRIVES+1]; 								// Move coordinates; last is feed rate
-		float savedMoveBuffer[DRIVES+1];							// The position and feedrate when we started the current simulation
-		float pauseCoordinates[DRIVES+1];							// Holds the XYZ coordinates of the last move, the amount of skipped extrusion plus feedrate
-		EndstopChecks endStopsToCheck;								// Which end stops we check them on the next move
-		uint8_t moveType;											// 0 = normal move, 1 = homing move, 2 = direct motor move
+		float feedRate;												// The feed rate of the last G0/G1 command that had an F parameter
+		RawMove moveBuffer;											// Move details to pass to Move class
+		float savedMoveBuffer[DRIVES + 1];							// The position and feedrate when we started the current simulation
+		float pausedMoveBuffer[DRIVES + 1];							// Holds the XYZ coordinates of the last move, the amount of skipped extrusion plus feedrate
 		bool drivesRelative; 										// Are movements relative - all except X, Y and Z
 		bool axesRelative;   										// Are movements relative - X, Y and Z
 		bool drivesRelativeStack[STACK];							// For dealing with Push and Pop
@@ -226,7 +234,8 @@ class GCodes
 		float longWait;												// Timer for things that happen occasionally (seconds)
 		bool limitAxes;												// Don't think outside the box.
 		bool axisIsHomed[AXES];										// These record which of the axes have been homed
-		GCodeBuffer *waitingForMoveGCodeBuffer;						// Which GCodeBuffer is waiting for all moves to stop?
+		bool waitingForMovesToFinish;								// Are we requesting all moves to stop?
+		GCodeBuffer *waitingForMoveGCodeBuffer;						// Which GCodeBuffer is performing a special move that requires all movement to stop?
 		float pausedFanValues[NUM_FANS];
 		float lastProbedZ;											// The last height at which the Z probe stopped
 		int8_t toolChangeSequence;									// Steps through the tool change procedure
@@ -242,12 +251,16 @@ class GCodes
 		bool simulating;
 		float simulationTime;
 		FilePosition filePos;										// The position we got up to in the file being printed
-		FilePosition moveFilePos;									// Saved version of filePos for the next real move to be processed
 		bool isFlashing;											// Is a new firmware binary going to be flashed?
-		bool isHashing;												// Are we currently hashing a file (M38)?
+
+		// Firmware retraction settings
+		float retractLength, retractExtra;							// retraction length and extra length to un-retract
+		float retractSpeed;											// retract speed in mm/min
+		float retractHop;											// Z hop when retracting
+
+		const GCodeBuffer* hashGCodeSource;							// The G-code source that issued the M38
 		FileStore* fileBeingHashed;									// If we are currently hashing, this is the file we are hashing
 		SHA1Context hash;											// The SHA1 accumulator
-		GCodeBuffer* hashGCodeSource;								// The source that issued the M38, so the reply can be sent to it
 };
 
 //*****************************************************************************************************

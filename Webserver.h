@@ -58,7 +58,6 @@ const uint32_t ftpPasvPortTimeout = 10000;		// maximum time to wait for an FTP d
 
 /* Telnet */
 
-const uint16_t telnetMessageLength = 128;		// maximum line length for incoming Telnet commands
 const uint32_t telnetSetupDuration = 4000;		// ignore the first Telnet request within this duration (in ms)
 
 
@@ -84,6 +83,7 @@ class ProtocolInterpreter
 
 		virtual void ConnectionEstablished();
 		virtual void ConnectionLost(const ConnectionState *cs) { }
+		virtual bool CanParseData();
 		virtual bool CharFromClient(const char c) = 0;
 		virtual void NoMoreDataAvailable();
 
@@ -150,6 +150,7 @@ class Webserver
 				void Diagnostics();
 
 				void ConnectionLost(const ConnectionState *cs);
+				bool CanParseData();
 				bool CharFromClient(const char c);
 				void NoMoreDataAvailable();
 				void ResetState();
@@ -164,8 +165,6 @@ class Webserver
 				void HandleGCodeReply(const char *reply);
 				uint16_t GetGCodeBufferSpace() const;
 				uint32_t GetReplySeq() const;
-
-				bool IsReady();					// returns true if the transaction can be parsed
 
 			private:
 
@@ -199,7 +198,7 @@ class Webserver
 				void SendConfigFile();
 				void SendGCodeReply();
 				void SendJsonResponse(const char* command);
-				bool GetJsonResponse(const char* request, OutputBuffer *&response, const char* key, const char* value, size_t valueLength, bool& keepOpen);
+				void GetJsonResponse(const char* request, OutputBuffer *&response, const char* key, const char* value, size_t valueLength, bool& keepOpen);
 				bool ProcessMessage();
 				bool RejectMessage(const char* s, unsigned int code = 500);
 
@@ -246,12 +245,11 @@ class Webserver
 				OutputStack *gcodeReply;
 
 				// File uploads
-				uint32_t postFileLength, uploadedBytes;			// How many POST bytes do we expect and how many have already been written?
+				uint32_t postFileLength, uploadedBytes;					// How many POST bytes do we expect and how many have already been written?
 
 				// Deferred requests (rr_fileinfo)
-				bool processingDeferredRequest;					// Are we processing a transaction multiple times to retrieve information?
-				ConnectionState *deferredRequestConnection;		// Which connection expects a response?
-				char filenameBeingProcessed[FILENAME_LENGTH];	// The filename being processed (for rr_fileinfo)
+				ConnectionState * volatile deferredRequestConnection;	// Which connection expects a response for a deferred request?
+				char filenameBeingProcessed[FILENAME_LENGTH];			// The filename being processed (for rr_fileinfo)
 
 				void ProcessDeferredRequest();
 		};
@@ -311,6 +309,7 @@ class Webserver
 
 				void ConnectionEstablished();
 				void ConnectionLost(const ConnectionState *cs);
+				bool CanParseData();
 				bool CharFromClient(const char c);
 				void ResetState();
 
@@ -320,7 +319,6 @@ class Webserver
 				void HandleGCodeReply(const char *reply);
 				uint16_t GetGCodeBufferSpace() const;
 
-				bool HasDataToSend() const;
 				void SendGCodeReply();
 
 			private:
@@ -336,10 +334,11 @@ class Webserver
 				uint8_t connectedClients;
 				uint32_t connectTime;
 
-				char clientMessage[telnetMessageLength];
+				bool processNextLine;
+				char clientMessage[GCODE_LENGTH];
 				uint16_t clientPointer;
 
-				void ProcessLine();
+				bool ProcessLine();
 
 				// Deal with incoming G-Codes
 				char gcodeBuffer[gcodeBufferLength];
@@ -360,10 +359,12 @@ class Webserver
 
 		bool webserverActive;
 		NetworkTransaction *currentTransaction;
+		ConnectionState * volatile readingConnection;
 
 		float longWait;
 };
 
+inline bool ProtocolInterpreter::CanParseData() { return true; }
 inline bool ProtocolInterpreter::DoingFastUpload() const { return false; }
 inline bool ProtocolInterpreter::IsUploading() const { return uploadState != notUploading; }
 
@@ -375,7 +376,6 @@ inline uint32_t Webserver::HttpInterpreter::GetReplySeq() const { return seq; }
 
 inline uint16_t Webserver::TelnetInterpreter::GetGCodeBufferSpace() const { return (gcodeReadIndex - gcodeWriteIndex - 1u) % gcodeBufferLength; }
 inline bool Webserver::TelnetInterpreter::GCodeAvailable() const { return gcodeReadIndex != gcodeWriteIndex; }
-inline bool Webserver::TelnetInterpreter::HasDataToSend() const { return gcodeReply != nullptr; }
 
 #endif
 

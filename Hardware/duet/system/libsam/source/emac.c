@@ -41,8 +41,8 @@
  *
  */
 
-// Duet change from "../chip.h" to "chip.h"
-#include "chip.h"
+#include "emac.h"
+#include "conf_eth.h"
 #include <string.h>
 
 /// @cond 0
@@ -69,11 +69,6 @@ extern "C" {
  *
  * @{
  */
-#define EMAC_RX_BUFFERS 	32
-#define EMAC_TX_BUFFERS 	8
-
-#define MAC_PHY_RETRY_MAX	1000000
-
 
 /** TX descriptor lists */
 #ifdef __ICCARM__ /* IAR */

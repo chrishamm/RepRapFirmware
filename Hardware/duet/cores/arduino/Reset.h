@@ -23,6 +23,9 @@
 extern "C" {
 #endif
 
+void Reset();
+void EraseAndReset();
+
 void initiateReset(int ms);
 void tickReset();
 void cancelReset();

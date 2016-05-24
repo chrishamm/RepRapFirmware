@@ -294,6 +294,8 @@ extern USARTClass Serial1;
 extern USARTClass Serial2;
 extern USARTClass Serial3;
 
+extern void ConfigurePin(const PinDescription &pinDesc);
+
 #endif
 
 // These serial port names are intended to allow libraries and architecture-neutral

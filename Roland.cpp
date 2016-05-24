@@ -61,12 +61,14 @@ void Roland::Spin()
 
 		// Anything new to do?
 
-		EndstopChecks endStopsToCheck;
-		uint8_t moveType;
-		FilePosition filePos;
-		if (reprap.GetGCodes()->ReadMove(move, endStopsToCheck, moveType, filePos))
+		GCodes::RawMove m;
+		if (reprap.GetGCodes()->ReadMove(m))
 		{
-			move[AXES] = move[DRIVES]; // Roland doesn't have extruders etc.
+			for(size_t axis = 0; axis < AXES; axis++)
+			{
+				move[axis] = m.coords[axis];
+			}
+			move[AXES] = m.feedRate * reprap.GetMove()->GetSpeedFactor();
 			ProcessMove();
 		}
 	}

@@ -8,6 +8,7 @@ class GCodeBuffer
 		GCodeBuffer(Platform* p, const char* id);
 		//const char *Identity() const { return identity; }
 		void Init(); 											// Set it up
+		void Diagnostics();										// Write some debug info
 		bool Put(char c);										// Add a character to the end
 		bool Put(const char *str, size_t len);					// Add an entire string
 		bool IsEmpty() const;									// Does this buffer contain any code?
@@ -27,6 +28,7 @@ class GCodeBuffer
 		int GetToolNumberAdjust() const { return toolNumberAdjust; }
 		void SetToolNumberAdjust(int arg) { toolNumberAdjust = arg; }
 		void SetCommsProperties(uint32_t arg) { checksumRequired = (arg & 1); }
+		bool StartingNewCode() const { return gcodePointer == 0; }
 
 	private:
 

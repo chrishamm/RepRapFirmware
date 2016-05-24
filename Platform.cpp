@@ -815,7 +815,6 @@ void Platform::Exit()
 		if (files[i]->inUse)
 		{
 			files[i]->Close();
-			files[i]->CloseFSO();
 		}
 	}
 
@@ -918,7 +917,7 @@ void Platform::Spin()
 		if (files[i]->closeRequested)
 		{
 			// We cannot do this in ISRs, so do it here
-			files[i]->CloseFSO();
+			files[i]->Close();
 		}
 	}
 
@@ -998,24 +997,11 @@ void Platform::Spin()
 	ClassReport(longWait);
 }
 
-static void eraseAndReset()
-{
-	cpu_irq_disable();
-	for(size_t i = 0; i <= (IFLASH_LAST_PAGE_ADDRESS - IFLASH_ADDR) / IFLASH_PAGE_SIZE; i++)
-	{
-		size_t pageStartAddr = IFLASH_ADDR + i * IFLASH_PAGE_SIZE;
-		flash_unlock(pageStartAddr, pageStartAddr + IFLASH_PAGE_SIZE - 1, nullptr, nullptr);
-	}
-	flash_clear_gpnvm(1);			// tell the system to boot from ROM next time
-	rstc_start_software_reset(RSTC);
-	for(;;) {}
-}
-
 void Platform::SoftwareReset(SoftwareResetReason reason)
 {
 	if (reason == SoftwareResetReason::erase)
 	{
-		eraseAndReset();			// does not return...
+		EraseAndReset();			// does not return...
 	}
 
 	uint16_t resetReason = (uint16_t)reason;
@@ -1046,8 +1032,7 @@ void Platform::SoftwareReset(SoftwareResetReason reason)
 	// Save diagnostics data to Flash and reset the software
 	DueFlashStorage::write(SoftwareResetData::nvAddress, &temp, sizeof(SoftwareResetData));
 
-	rstc_start_software_reset(RSTC);
-	for(;;) {}
+	Reset();
 }
 
 //*****************************************************************************************************************
@@ -1962,6 +1947,12 @@ MassStorage* Platform::GetMassStorage() const
 
 void Platform::Message(MessageType type, const char *message)
 {
+	// Print host messages as debug messages if debugging is enabled
+	if (type == HOST_MESSAGE && reprap.Debug(modulePlatform))
+	{
+		type = DEBUG_MESSAGE;
+	}
+
 	switch (type)
 	{
 		case FLASH_LED:
@@ -2066,13 +2057,19 @@ void Platform::Message(MessageType type, const char *message)
 	}
 }
 
-void Platform::Message(const MessageType type, const StringRef &message)
+void Platform::Message(MessageType type, const StringRef &message)
 {
 	Message(type, message.Pointer());
 }
 
-void Platform::Message(const MessageType type, OutputBuffer *buffer)
+void Platform::Message(MessageType type, OutputBuffer *buffer)
 {
+	// Print host messages as debug messages if debugging is enabled
+	if (type == HOST_MESSAGE && reprap.Debug(modulePlatform))
+	{
+		type = DEBUG_MESSAGE;
+	}
+
 	switch (type)
 	{
 		case AUX_MESSAGE:
@@ -2492,16 +2489,17 @@ void Platform::Tick()
 #endif
 }
 
-/*static*/ uint16_t Platform::GetAdcReading(adc_channel_num_t chan)
+/*static*/ uint16_t Platform::GetAdcReading(EAnalogChannel chan)
 {
-	uint16_t rslt = (uint16_t) adc_get_channel_value(ADC, chan);
-	adc_disable_channel(ADC, chan);
+	const adc_channel_num_t channel = (adc_channel_num_t)(int)chan;
+	uint16_t rslt = (uint16_t) adc_get_channel_value(ADC, channel);
+	adc_disable_channel(ADC, channel);
 	return rslt;
 }
 
-/*static*/ void Platform::StartAdcConversion(adc_channel_num_t chan)
+/*static*/ void Platform::StartAdcConversion(EAnalogChannel chan)
 {
-	adc_enable_channel(ADC, chan);
+	adc_enable_channel(ADC, (adc_channel_num_t)(int)chan);
 	adc_start(ADC);
 }
 

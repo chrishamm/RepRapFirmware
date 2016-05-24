@@ -45,7 +45,6 @@
 #define EMAC_H_INCLUDED
 
 #include "../chip.h"
-//#include "conf_eth.h"
 
 /// @cond 0
 /**INDENT-OFF**/

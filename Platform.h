@@ -47,8 +47,11 @@ Licence: GPL
 #include "Arduino.h"
 #include "MassStorage.h"
 #include "OutputMemory.h"
+#include "ff.h"
 #include "MAX31855.h"
 #include "MCP4461.h"
+#include "MassStorage.h"
+#include "FileStore.h"
 
 // Definitions needed by Pins.h
 
@@ -173,11 +176,15 @@ const int INKJET_DELAY_MICROSECONDS = 800;				// How long to wait before the nex
 
 // Communication port settings
 
-const unsigned int MAIN_BAUD_RATE = 115200;		// Default communication speed of the main port (USB)
-const unsigned int AUX_BAUD_RATE = 57600;		// Ditto - for auxiliary UART device (PanelDue)
-const unsigned int AUX2_BAUD_RATE = 9600;		// Ditto - for second auxiliary UART device (Roland mill)
+const unsigned int MAIN_BAUD_RATE = 115200;				// Default communication speed of the main port (USB)
+const unsigned int AUX_BAUD_RATE = 57600;				// Ditto - for auxiliary UART device (PanelDue)
+const unsigned int AUX2_BAUD_RATE = 9600;				// Ditto - for second auxiliary UART device (Roland mill)
 
-const uint32_t SERIAL_MAIN_TIMEOUT = 1000;		// Timeout in ms for sending data to the main serial/USB port
+const uint32_t SERIAL_MAIN_TIMEOUT = 1000;				// Timeout in ms for sending data to the main serial/USB port
+
+// File handling
+
+const size_t MAX_FILES = 10;							// Must be large enough to handle the max number of simultaneous web requests + files being printed
 
 /***************************************************************************************************/
 
@@ -480,11 +487,11 @@ class Platform
 
 		// Message output (see MessageType for further details)
 
-		void Message(const MessageType type, const char *message);
-		void Message(const MessageType type, const StringRef& message);
-		void Message(const MessageType type, OutputBuffer *buffer);
-		void MessageF(const MessageType type, const char *fmt, ...);
-		void MessageF(const MessageType type, const char *fmt, va_list vargs);
+		void Message(MessageType type, const char *message);
+		void Message(MessageType type, const StringRef& message);
+		void Message(MessageType type, OutputBuffer *buffer);
+		void MessageF(MessageType type, const char *fmt, ...);
+		void MessageF(MessageType type, const char *fmt, va_list vargs);
 
 		// Movement
 
@@ -828,16 +835,16 @@ class Platform
 		// checking has already been performed.
 
 		uint8_t heaterTempChannels[HEATERS];
-		adc_channel_num_t thermistorAdcChannels[HEATERS];
-		adc_channel_num_t zProbeAdcChannel;
+		EAnalogChannel thermistorAdcChannels[HEATERS];
+		EAnalogChannel zProbeAdcChannel;
 		uint32_t thermistorOverheatSums[HEATERS];
 		uint8_t tickState;
 		int currentZProbeType;
 		size_t currentHeater;
 		int debugCode;
 
-		static uint16_t GetAdcReading(adc_channel_num_t chan);
-		static void StartAdcConversion(adc_channel_num_t chan);
+		static uint16_t GetAdcReading(EAnalogChannel chan);
+		static void StartAdcConversion(EAnalogChannel chan);
 
 		// Hotend configuration
 
@@ -876,13 +883,15 @@ class FileData
 
 		bool IsLive() const { return f != nullptr; }
 
-		void Close()
+		bool Close()
 		{
 			if (f != nullptr)
 			{
-				f->Close();
+				bool ok = f->Close();
 				f = nullptr;
+				return ok;
 			}
+			return false;
 		}
 
 		bool Read(char& b)
@@ -921,7 +930,7 @@ class FileData
 			return (f == nullptr ? -1.0 : f->FractionRead());
 		}
 
-		FilePosition Position() const
+		FilePosition GetPosition() const
 		{
 			return (f == nullptr ? 0 : f->Position());
 		}

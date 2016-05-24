@@ -319,13 +319,13 @@ extern "C" void analogWriteDuet(uint32_t ulPin, uint32_t ulValue, uint16_t freq)
 }
 
 // Convert an Arduino Due analog pin number to the corresponding ADC channel number
-extern "C" enum adc_channel_num_t PinToAdcChannel(int pin)
+extern "C" EAnalogChannel PinToAdcChannel(int pin)
 {
 	if (pin < A0)
 	{
 		pin += A0;
 	}
-	return (enum adc_channel_num_t) (int) g_APinDescription[pin].ulADCChannelNumber;
+	return g_APinDescription[pin].ulADCChannelNumber;
 }
 
 // End

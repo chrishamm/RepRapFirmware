@@ -393,7 +393,7 @@ void serialEventRun(void)
 
 extern "C" void __libc_init_array(void);
 
-static void ConfigurePin(const PinDescription& pinDesc)
+void ConfigurePin(const PinDescription& pinDesc)
 {
 	PIO_Configure(pinDesc.pPort, pinDesc.ulPinType, pinDesc.ulPin, pinDesc.ulPinConfiguration);
 }

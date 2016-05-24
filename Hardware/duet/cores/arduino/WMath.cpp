@@ -25,33 +25,31 @@ extern "C" {
 
 extern uint32_t trueRandom()
 {
-	while (! (TRNG->TRNG_ISR & TRNG_ISR_DATRDY));
+	while (! (TRNG->TRNG_ISR & TRNG_ISR_DATRDY)) {}
 	return (uint32_t)TRNG->TRNG_ODATA;
 }
 
-extern long random( long howbig )
+extern int32_t random(int32_t howbig)
 {
-	if ( howbig == 0 )
+	if (howbig <= 0)
 	{
-		return 0 ;
+		return 0;
 	}
 
-	return trueRandom() % howbig;
+	return trueRandom() % (uint32_t)howbig;
 }
 
-extern long random( long howsmall, long howbig )
+extern int32_t random(int32_t howsmall, int32_t howbig)
 {
 	if (howsmall >= howbig)
 	{
 		return howsmall;
 	}
 
-	long diff = howbig - howsmall;
-
-	return random(diff) + howsmall;
+	return random(howbig - howsmall) + howsmall;
 }
 
-extern long map(long x, long in_min, long in_max, long out_min, long out_max)
+extern int32_t map(int32_t x, int32_t in_min, int32_t in_max, int32_t out_min, int32_t out_max)
 {
 	return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }

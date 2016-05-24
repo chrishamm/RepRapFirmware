@@ -81,6 +81,14 @@ enum TransactionStatus
 	acquired
 };
 
+// How is a deferred request supposed to be handled?
+enum class DeferralMode
+{
+	DeferOnly,			// don't change anything, because we want to read more of it next time
+	ResetData,			// keep the data and reset all reading pointers allowing us to process it again
+	DiscardData			// discard all incoming data and re-enqueue the empty transaction
+};
+
 // Start with a class to hold input and output from the network that needs to be responded to.
 // This includes changes in the connection state, e.g. connects and disconnects.
 class NetworkTransaction
@@ -112,7 +120,7 @@ class NetworkTransaction
 		uint16_t GetRemotePort() const;
 
 		void Commit(bool keepConnectionAlive);
-		void Defer(bool keepData);
+		void Defer(DeferralMode mode);
 		void Discard();
 
 	private:
@@ -202,7 +210,7 @@ class Network
 		NetworkTransaction * volatile readyTransactions;
 		NetworkTransaction * volatile writingTransactions;
 
-		enum { NetworkInactive, NetworkEstablishingLink, NetworkActive } state;
+		enum { NetworkInactive, NetworkEstablishingLink, NetworkObtainingIP, NetworkActive } state;
 		bool isEnabled;
 		volatile bool resetCallback;
 		char hostname[16];								// Limit DHCP hostname to 15 characters + terminating 0

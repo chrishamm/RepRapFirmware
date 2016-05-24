@@ -24,8 +24,8 @@ Licence: GPL
 #define CONFIGURATION_H
 
 #define NAME "RepRapFirmware"
-#define VERSION "1.10-b4-ch"
-#define DATE "2016-03-24"
+#define VERSION "1.11-ch"
+#define DATE "2016-04-08"
 
 #define AUTHORS "reprappro, dc42, chrishamm, t3p3, dnewman"
 
@@ -103,10 +103,12 @@ const size_t GCODE_LENGTH = 100;
 const size_t GCODE_REPLY_LENGTH = 2048;
 const size_t MESSAGE_LENGTH = 256;
 
+const size_t FILENAME_LENGTH = 100;
+
 // Output buffer lengths
 
-const uint16_t OUTPUT_BUFFER_SIZE = 256;				// How many bytes does each OutputBuffer hold?
-const size_t OUTPUT_BUFFER_COUNT = 16;					// How many OutputBuffer instances do we have?
+const uint16_t OUTPUT_BUFFER_SIZE = 128;				// How many bytes does each OutputBuffer hold?
+const size_t OUTPUT_BUFFER_COUNT = 32;					// How many OutputBuffer instances do we have?
 
 // Move system
 
@@ -128,7 +130,6 @@ const float FILAMENT_WIDTH = 1.75;						// Millimetres
 #define FOUR04_PAGE_FILE "html404.htm"
 
 // Filesystem and upload defaults
-const size_t FILE_HASH_BLOCK_SIZE = 256;				// The number of bytes to read and hash per Spin() when computing SHA1 (M38)
 
 #define FS_PREFIX "0:"
 #define GCODE_DIR "0:/gcodes/"							// Place to find G-Code files on the SD card
