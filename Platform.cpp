@@ -1429,7 +1429,10 @@ void Platform::SetHeaterPwm(size_t heater, uint8_t power)
 	if (heatOnPins[heater] >= 0)
 	{
 		uint16_t freq = (reprap.GetHeat()->UseSlowPwm(heater)) ? SLOW_HEATER_PWM_FREQUENCY : NORMAL_HEATER_PWM_FREQUENCY;
-		analogWriteDuet(heatOnPins[heater], (HEAT_ON == 0) ? 255 - power : power, freq);
+
+		uint8_t transformedPower = reprap.GetHeat()->IsHeaterInverted(heater) ? 255 - power : power;
+
+		analogWriteDuet(heatOnPins[heater], transformedPower, freq);
 	}
 }
 

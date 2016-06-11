@@ -40,6 +40,13 @@ void Heat::Init()
 	lastTime = platform->Time();
 	longWait = lastTime;
 	active = true;
+
+	for (int32_t i = 0; i < HEATER_CONTROL_ENTRIES; i++)
+	{
+		// We want to set the bits (ie: make the heaters inverted)
+		// if the HEAT_ON constant is false (ie: is itself inverted)
+		heaterControlBits[i] = HEAT_ON ? 0 : 0xFF;
+	}
 }
 
 void Heat::Exit()
