@@ -40,29 +40,34 @@ bool GCodeQueue::QueueCode(GCodeBuffer &gb, uint32_t segmentsLeft)
 
 	// Check for G-Codes that can be queued
 	bool queueCode = false;
-	if (gb.Seen('G'))
+	switch (gb.GetCommandLetter())
 	{
-		const int code = gb.GetIValue();
+		case 'G':
+		{
+			const int code = gb.GetIValue();
 
-		// Set active/standby temperatures
-		queueCode = (code == 10 && gb.Seen('P'));
-	}
-	// Check for M-Codes that can be queued
-	else if (gb.Seen('M'))
-	{
-		const int code = gb.GetIValue();
+			// Set active/standby temperatures
+			queueCode = (code == 10 && gb.Seen('P'));
+			break;
+		}
 
-		// Fan control
-		queueCode |= (code == 106 || code == 107);
+		case 'M':
+		{
+			const int code = gb.GetIValue();
 
-		// Set temperatures and return immediately
-		queueCode |= (code == 104 || code == 140 || code == 141 || code == 144);
+			// Fan control
+			queueCode |= (code == 106 || code == 107);
 
-		// Display Message (LCD), Beep, RGB colour, Set servo position
-		queueCode |= (code == 117 || code == 300 || code == 280 || code == 420);
+			// Set temperatures and return immediately
+			queueCode |= (code == 104 || code == 140 || code == 141 || code == 144);
 
-		// Valve control
-		queueCode |= (code == 126 || code == 127);
+			// Display Message (LCD), Beep, RGB colour, Set servo position
+			queueCode |= (code == 117 || code == 300 || code == 280 || code == 420);
+
+			// Valve control
+			queueCode |= (code == 126 || code == 127);
+			break;
+		}
 	}
 
 	// Does it make sense to queue this code?

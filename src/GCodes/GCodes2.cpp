@@ -46,7 +46,7 @@ bool GCodes::ActOnCode(GCodeBuffer& gb, StringRef& reply)
 	}
 
 	// Can we queue this code?
-	if (&gb != queuedGCode && !codeQueue->QueueCode(gb, segmentsLeft))
+	if (gb.CanQueueCodes() && codeQueue->QueueCode(gb, segmentsLeft))
 	{
 		HandleReply(gb, false, "");
 		return true;

@@ -69,13 +69,13 @@ GCodes::GCodes(Platform* p, Webserver* w) :
 	serialInput = new StreamGCodeInput(SERIAL_MAIN_DEVICE);
 	auxInput = new StreamGCodeInput(SERIAL_AUX_DEVICE);
 
-	httpGCode = new GCodeBuffer("http", HTTP_MESSAGE);
-	telnetGCode = new GCodeBuffer("telnet", TELNET_MESSAGE);
-	fileGCode = new GCodeBuffer("file", GENERIC_MESSAGE);
-	serialGCode = new GCodeBuffer("serial", HOST_MESSAGE);
-	auxGCode = new GCodeBuffer("aux", AUX_MESSAGE);
-	daemonGCode = new GCodeBuffer("daemon", GENERIC_MESSAGE);
-	queuedGCode = new GCodeBuffer("queue", GENERIC_MESSAGE);
+	httpGCode = new GCodeBuffer("http", HTTP_MESSAGE, false);
+	telnetGCode = new GCodeBuffer("telnet", TELNET_MESSAGE, true);
+	fileGCode = new GCodeBuffer("file", GENERIC_MESSAGE, true);
+	serialGCode = new GCodeBuffer("serial", HOST_MESSAGE, true);
+	auxGCode = new GCodeBuffer("aux", AUX_MESSAGE, false);
+	daemonGCode = new GCodeBuffer("daemon", GENERIC_MESSAGE, false);
+	queuedGCode = new GCodeBuffer("queue", GENERIC_MESSAGE, false);
 
 	codeQueue = new GCodeQueue();
 }
@@ -132,13 +132,13 @@ void GCodes::Reset()
 	// Here we could reset the input sources as well, but this would mess up M122\nM999
 	// because both codes are sent at once from the web interface. Hence we don't do this here
 
-	httpGCode->Init();
-	telnetGCode->Init();
-	fileGCode->Init();
-	serialGCode->Init();
-	auxGCode->Init();
+	httpGCode->Reset();
+	telnetGCode->Reset();
+	fileGCode->Reset();
+	serialGCode->Reset();
+	auxGCode->Reset();
 	auxGCode->SetCommsProperties(1);					// by default, we require a checksum on the aux port
-	daemonGCode->Init();
+	daemonGCode->Reset();
 
 	nextGcodeSource = 0;
 

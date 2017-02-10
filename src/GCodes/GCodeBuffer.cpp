@@ -12,10 +12,16 @@
 #include "RepRap.h"
 
 // Create a default GCodeBuffer
-GCodeBuffer::GCodeBuffer(const char* id, MessageType mt)
+GCodeBuffer::GCodeBuffer(const char* id, MessageType mt, bool usesCodeQueue)
 	: machineState(new GCodeMachineState()), identity(id), checksumRequired(false), writingFileDirectory(nullptr),
-	  toolNumberAdjust(0), responseMessageType(mt)
+	  toolNumberAdjust(0), responseMessageType(mt), queueCodes(usesCodeQueue)
 {
+	Init();
+}
+
+void GCodeBuffer::Reset()
+{
+	while (PopState()) { }
 	Init();
 }
 
