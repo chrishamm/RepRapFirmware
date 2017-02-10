@@ -42,7 +42,7 @@ CPPFLAGS += -Wall -c -std=gnu++11 -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfl
 
 
 FORCESYM := -u _sbrk -u link -u _close -u _fstat -u _isatty -u _lseek -u _read -u _write -u _exit -u kill -u _getpid
-LDFLAGS := -L"$(DUET_BOARD_PATH)/variants/duetNG" $(OPTIMISATION) -Wl,--gc-sections -Wl,--fatal-warnings -mcpu=cortex-m4 -T"$(DUET_BOARD_PATH)/variants/duetNG/linker_scripts/gcc/flash.ld" -Wl,-Map,"$(OUTPUT_PATH)/DuetEthernet-$(VERSION).map" -o "$(OUTPUT_PATH)/DuetEthernet-$(VERSION).elf" -mthumb -Wl,--cref -Wl,--check-sections -Wl,--gc-sections -Wl,--entry=Reset_Handler -Wl,--unresolved-symbols=report-all -Wl,--warn-common -Wl,--warn-section-align -Wl,--warn-unresolved-symbols -Wl,--start-group $(FORCESYM) $(BUILD_PATH)/*.o -lDuetNG -Wl,--end-group -lm -gcc
+LDFLAGS := -L"$(DUET_BOARD_PATH)/variants/duetNG" $(OPTIMISATION) -Wl,--gc-sections -Wl,--fatal-warnings -mcpu=cortex-m4 -T"$(DUET_BOARD_PATH)/variants/duetNG/linker_scripts/gcc/flash.ld" -Wl,-Map,"$(OUTPUT_PATH)/DuetEthernetFirmware-$(VERSION).map" -o "$(OUTPUT_PATH)/DuetEthernet-$(VERSION).elf" -mthumb -Wl,--cref -Wl,--check-sections -Wl,--gc-sections -Wl,--entry=Reset_Handler -Wl,--unresolved-symbols=report-all -Wl,--warn-common -Wl,--warn-section-align -Wl,--warn-unresolved-symbols -Wl,--start-group $(FORCESYM) $(BUILD_PATH)/*.o -lDuetNG -Wl,--end-group -lm -gcc
 
 
 # ================================= Target all ======================================
