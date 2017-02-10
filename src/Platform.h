@@ -602,6 +602,9 @@ private:
 	{
 		static const uint16_t versionValue = 6;		// increment this whenever this struct changes
 		static const uint16_t magicValue = 0x7D00 | versionValue;	// value we use to recognise that all the flash data has been written
+#ifndef DUET_NG
+		static const uint32_t nvAddress = 0;		// must be 4-byte aligned
+#endif
 		static const size_t numberOfSlots = 6;		// number of storage slots used to implement wear levelling
 
 		uint16_t magic;								// the magic number, including the version

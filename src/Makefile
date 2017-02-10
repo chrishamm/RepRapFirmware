@@ -1,13 +1,13 @@
 # Makefile for RepRapFirmware
 # licensed under the terms of the GPL v3
 #
-# written by Christian Hammacher, 2016
+# written by Christian Hammacher, 2016-2017
 
-VERSION := 1.17c
-DATE := 2017-01-14
+VERSION := 1.17d
+DATE := 2017-02-10
 
 GCC_VERSION := 4.8.3-2014q1
-DUET_BOARD_VERSION := 2.0.7
+DUET_BOARD_VERSION := 2.0.8
 
 # For Duet 0.6 / 0.8.5
 BOSSAC_VERSION := 1.3a-arduino
