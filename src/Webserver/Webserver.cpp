@@ -862,16 +862,8 @@ void Webserver::HttpInterpreter::SendJsonResponse(const char* command)
 		return;
 	}
 
-	bool keepOpen = false;
 	bool mayKeepOpen;
-	if (numQualKeys == 0)
-	{
-		GetJsonResponse(command, jsonResponse, mayKeepOpen);
-	}
-	else
-	{
-		GetJsonResponse(command, jsonResponse, mayKeepOpen);
-	}
+	GetJsonResponse(command, jsonResponse, mayKeepOpen);
 
 	// Check special cases of deferred requests (rr_fileinfo) and rejected messages
 	NetworkTransaction *transaction = webserver->currentTransaction;
@@ -882,7 +874,7 @@ void Webserver::HttpInterpreter::SendJsonResponse(const char* command)
 	}
 
 	// Send the JSON response
-
+	bool keepOpen = false;
 	if (mayKeepOpen)
 	{
 		// Check that the browser wants to persist the connection too
