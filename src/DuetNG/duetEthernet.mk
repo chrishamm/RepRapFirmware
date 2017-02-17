@@ -20,10 +20,10 @@ INCLUDES := -I"$(DUET_BOARD_PATH)/cores/arduino" -I"$(DUET_BOARD_PATH)/asf" -I"$
 INCLUDES += -I"$(DUET_LIBRARY_PATH)/Flash" -I"$(DUET_LIBRARY_PATH)/RTCDue" -I"$(DUET_LIBRARY_PATH)/SharedSpi" -I"$(DUET_LIBRARY_PATH)/Storage" -I"$(DUET_LIBRARY_PATH)/Wire"
 
 # Set board options
-INCLUDES += -I"$(PWD)" -I"$(PWD)/DuetNG" -I"$(PWD)/DuetNG/DuetEthernet" -I"$(PWD)/DuetNG/DuetEthernet/Wiznet/Ethernet" -I"$(PWD)/Webserver"
+INCLUDES += -I"$(PWD)" -I"$(PWD)/DuetNG" -I"$(PWD)/DuetNG/DuetEthernet" -I"$(PWD)/DuetNG/DuetEthernet/Wiznet/Ethernet"
 
 # Get source files
-VPATH := $(PWD) $(PWD)/DuetNG $(PWD)/DuetNG/DuetEthernet $(PWD)/DuetNG/DuetEthernet/Wiznet/Ethernet $(PWD)/DuetNG/DuetEthernet/Wiznet/Ethernet/W5500 $(PWD)/DuetNG/DuetEthernet/Wiznet/Internet/DHCP $(PWD)/GCodes $(PWD)/Heating $(PWD)/Movement $(PWD)/Storage $(PWD)/Webserver
+VPATH := $(PWD) $(PWD)/DuetNG $(PWD)/DuetNG/DuetEthernet $(PWD)/DuetNG/DuetEthernet/Wiznet/Ethernet $(PWD)/DuetNG/DuetEthernet/Wiznet/Ethernet/W5500 $(PWD)/DuetNG/DuetEthernet/Wiznet/Internet/DHCP $(PWD)/GCodes $(PWD)/Heating $(PWD)/Movement $(PWD)/Storage
 VPATH += $(PWD)/Libraries/Fatfs $(PWD)/Libraries/General $(PWD)/Libraries/Math $(PWD)/Libraries/MCP4461 $(PWD)/Libraries/TemperatureSensor $(PWD)/Libraries/sha1
 
 C_SOURCES += $(foreach dir,$(VPATH),$(wildcard $(dir)/*.c)) $(wildcard $(PWD)/*.c)

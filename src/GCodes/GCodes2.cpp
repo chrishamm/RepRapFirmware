@@ -221,6 +221,8 @@ bool GCodes::HandleGcode(GCodeBuffer& gb, StringRef& reply)
 		{
 			return false;
 		}
+
+		ClearBabyStepping();
 		if (reprap.GetMove()->IsDeltaMode() && !AllAxesAreHomed())
 		{
 			reply.copy("Must home a delta printer before bed probing");
@@ -241,6 +243,8 @@ bool GCodes::HandleGcode(GCodeBuffer& gb, StringRef& reply)
 		{
 			return false;
 		}
+
+		ClearBabyStepping();
 
 		// Try to execute bed.g
 		if (!DoFileMacro(gb, BED_EQUATION_G, reprap.GetMove()->IsDeltaMode()))

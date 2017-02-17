@@ -19,10 +19,10 @@ INCLUDES := -I"$(DUET_BOARD_PATH)/cores/arduino" -I"$(DUET_BOARD_PATH)/asf" -I"$
 INCLUDES += -I"$(DUET_LIBRARY_PATH)/Flash" -I"$(DUET_LIBRARY_PATH)/RTCDue" -I"$(DUET_LIBRARY_PATH)/SharedSpi" -I"$(DUET_LIBRARY_PATH)/Storage" -I"$(DUET_LIBRARY_PATH)/Wire"
 
 # Set board options
-INCLUDES += -I"$(PWD)" -I"$(PWD)/Duet" -I"$(PWD)/Duet/EMAC" -I"$(PWD)/Duet/Lwip" -I"$(PWD)/Duet/Lwip/lwip/src/include" -I"$(PWD)/Webserver"
+INCLUDES += -I"$(PWD)" -I"$(PWD)/Duet" -I"$(PWD)/Duet/EMAC" -I"$(PWD)/Duet/Lwip" -I"$(PWD)/Duet/Lwip/lwip/src/include"
 
 # Get source files
-VPATH := $(PWD) $(PWD)/Duet $(PWD)/GCodes $(PWD)/Heating $(PWD)/Movement $(PWD)/Storage $(PWD)/Webserver
+VPATH := $(PWD) $(PWD)/Duet $(PWD)/GCodes $(PWD)/Heating $(PWD)/Movement $(PWD)/Storage
 VPATH += $(PWD)/Duet/EMAC $(PWD)/Duet/Lwip/contrib/apps/netbios $(PWD)/Duet/Lwip/contrib/apps/mdns $(PWD)/Duet/Lwip/lwip/src/api $(PWD)/Duet/Lwip/lwip/src/core $(PWD)/Duet/Lwip/lwip/src/core/ipv4 $(PWD)/Duet/Lwip/lwip/src/core/snmp $(PWD)/Duet/Lwip/lwip/src/netif $(PWD)/Duet/Lwip/lwip/src/netif/ppp $(PWD)/Duet/MCP4461
 VPATH += $(PWD)/Libraries/Fatfs $(PWD)/Libraries/General $(PWD)/Libraries/Math $(PWD)/Libraries/TemperatureSensor $(PWD)/Libraries/sha1
 
