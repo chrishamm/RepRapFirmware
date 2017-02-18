@@ -5,3 +5,5 @@
 /Release/**/*.elf
 *~
 *orig
+*.cproject
+*.project
