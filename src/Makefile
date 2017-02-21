@@ -3,7 +3,7 @@
 #
 # written by Christian Hammacher, 2016-2017
 
-VERSION := 1.18-alpha
+VERSION := 1.18-b1
 DATE := 2017-02-23
 
 GCC_VERSION := 4.8.3-2014q1

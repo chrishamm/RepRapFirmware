@@ -56,6 +56,9 @@ public:
 	const char *GetIdentity() const { return identity; }
 	const bool CanQueueCodes() const { return queueCodes; }
 
+	uint32_t whenTimerStarted;							// when we started waiting
+	bool timerRunning;									// true if we are waiting
+
 private:
 
 	enum class GCodeBufferState

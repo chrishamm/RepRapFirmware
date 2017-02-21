@@ -29,7 +29,7 @@ void GCodeBuffer::Init()
 {
 	gcodePointer = 0;
 	readPointer = -1;
-	inComment = false;
+	inComment = timerRunning = false;
 	bufferState = GCodeBufferState::idle;
 }
 
