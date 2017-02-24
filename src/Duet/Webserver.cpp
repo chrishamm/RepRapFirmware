@@ -725,6 +725,7 @@ void Webserver::HttpInterpreter::SendFile(const char* nameOfFileToSend, bool isW
 		transaction->Write("Cache-Control: no-cache, no-store, must-revalidate\n");
 		transaction->Write("Pragma: no-cache\n");
 		transaction->Write("Expires: 0\n");
+		transaction->Write("Access-Control-Allow-Origin: *\n");
 	}
 
 	const char* contentType;
@@ -804,6 +805,7 @@ void Webserver::HttpInterpreter::SendGCodeReply()
 	transaction->Write("Cache-Control: no-cache, no-store, must-revalidate\n");
 	transaction->Write("Pragma: no-cache\n");
 	transaction->Write("Expires: 0\n");
+	transaction->Write("Access-Control-Allow-Origin: *\n");
 	transaction->Write("Content-Type: text/plain\n");
 	transaction->Printf("Content-Length: %u\n", gcodeReply->DataLength());
 	transaction->Write("Connection: close\n\n");
@@ -893,6 +895,7 @@ void Webserver::HttpInterpreter::SendJsonResponse(const char* command)
 	transaction->Write("Cache-Control: no-cache, no-store, must-revalidate\n");
 	transaction->Write("Pragma: no-cache\n");
 	transaction->Write("Expires: 0\n");
+	transaction->Write("Access-Control-Allow-Origin: *\n");
 	transaction->Write("Content-Type: application/json\n");
 	transaction->Printf("Content-Length: %u\n", (jsonResponse != nullptr) ? jsonResponse->Length() : 0);
 	transaction->Printf("Connection: %s\n\n", keepOpen ? "keep-alive" : "close");
@@ -1515,7 +1518,27 @@ bool Webserver::HttpInterpreter::ProcessMessage()
 		ResetState();
 		return true;
 	}
-	else if (IsAuthenticated() && StringEquals(commandWords[0], "POST"))
+
+	if (StringEquals(commandWords[0], "OPTIONS"))
+	{
+		NetworkTransaction *transaction = webserver->currentTransaction;
+
+		transaction->Write("HTTP/1.1 200 OK\n");
+		transaction->Write("Allow: OPTIONS, GET, POST\n");
+		transaction->Write("Cache-Control: no-cache, no-store, must-revalidate\n");
+		transaction->Write("Pragma: no-cache\n");
+		transaction->Write("Expires: 0\n");
+		transaction->Write("Access-Control-Allow-Origin: *\n");
+		transaction->Write("Access-Control-Allow-Headers: Content-Type\n");
+		transaction->Write("Content-Length: 0\n");
+		transaction->Write("\n");
+		transaction->Commit(false);
+
+		ResetState();
+		return true;
+	}
+
+	if (IsAuthenticated() && StringEquals(commandWords[0], "POST"))
 	{
 		const bool isUploadRequest = (StringEquals(commandWords[1], KO_START "upload"))
 								  || (commandWords[1][0] == '/' && StringEquals(commandWords[1] + 1, KO_START "upload"));
@@ -1750,6 +1773,7 @@ void Webserver::HttpInterpreter::ProcessDeferredRequest()
 			transaction->Write("Cache-Control: no-cache, no-store, must-revalidate\n");
 			transaction->Write("Pragma: no-cache\n");
 			transaction->Write("Expires: 0\n");
+			transaction->Write("Access-Control-Allow-Origin: *\n");
 			transaction->Write("Content-Type: application/json\n");
 			transaction->Printf("Content-Length: %u\n", (jsonResponse != nullptr) ? jsonResponse->Length() : 0);
 			transaction->Printf("Connection: close\n\n");
