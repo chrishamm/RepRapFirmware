@@ -1505,9 +1505,10 @@ bool GCodes::ReadMove(RawMove& m)
 	{
 		// Calculate the move length, to see how much new babystepping is appropriate for this move
 		float xMoveLength = 0.0;
+		const uint32_t xAxes = reprap.GetCurrentXAxes();
 		for (size_t drive = 0; drive < numAxes; ++drive)
 		{
-			if ((arcAxesMoving & (1 << drive)) != 0)
+			if ((xAxes & (1 << drive)) != 0)
 			{
 				xMoveLength = max<float>(xMoveLength, fabs(m.coords[drive] - m.initialCoords[drive]));
 			}
