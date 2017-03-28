@@ -126,6 +126,7 @@ void GCodes::Init()
 	retractHop = 0.0;
 	retractSpeed = unRetractSpeed = DefaultRetractSpeed * SecondsToMinutes;
 	isRetracted = false;
+	lastAuxStatusReportType = -1;						// no status reports requested yet
 }
 
 // This is called from Init and when doing an emergency stop
@@ -176,6 +177,7 @@ void GCodes::Reset()
 	simulationMode = 0;
 	simulationTime = 0.0;
 	isPaused = false;
+	doingToolChange = false;
 	moveBuffer.filePos = noFilePosition;
 	lastEndstopStates = platform->GetAllEndstopStates();
 	firmwareUpdateModuleMap = 0;
@@ -353,28 +355,8 @@ void GCodes::Spin()
 			}
 			else
 			{
+				CheckReportDue(gb, reply);
 				isWaiting = true;
-
-				// In Marlin emulation mode we should return some sort of undocumented message here every second. Try a standard temperature report.
-				if (platform->Emulating() == marlin && gb.GetResponseMessageType() == MessageType::HOST_MESSAGE)
-				{
-					const uint32_t now = millis();
-					if (gb.timerRunning)
-					{
-						if (now - gb.whenTimerStarted >= 1000)
-						{
-							gb.whenTimerStarted = now;
-							GenerateTemperatureReport(reply);
-							reply.cat('\n');
-							platform->Message(HOST_MESSAGE, reply.Pointer());
-						}
-					}
-					else
-					{
-						gb.whenTimerStarted = now;
-						gb.timerRunning = true;
-					}
-				}
 			}
 			break;
 
@@ -946,7 +928,7 @@ void GCodes::Diagnostics(MessageType mtype)
 	platform->Message(mtype, "=== GCodes ===\n");
 	platform->MessageF(mtype, "Segments left: %u\n", segmentsLeft);
 	platform->MessageF(mtype, "Stack records: %u allocated, %u in use\n", GCodeMachineState::GetNumAllocated(), GCodeMachineState::GetNumInUse());
-	const GCodeBuffer *movementOwner = resourceOwners[MoveResource];
+	const GCodeBuffer * const movementOwner = resourceOwners[MoveResource];
 	platform->MessageF(mtype, "Movement lock held by %s\n", (movementOwner == nullptr) ? "null" : movementOwner->GetIdentity());
 
 	for (size_t i = 0; i < ARRAY_SIZE(gcodeSources); ++i)
@@ -1404,16 +1386,19 @@ bool GCodes::DoArcMove(GCodeBuffer& gb, bool clockwise)
 		// Deal with the X axes
 		for (size_t axis = 0; axis < numAxes; ++axis)
 		{
-			arcCentre[axis] = moveBuffer.initialCoords[axis] + iParam;
-			if ((arcAxesMoving & (1 << axis)) != 0)
+			if (axis != Y_AXIS)
 			{
-				if (axesRelative)
+				arcCentre[axis] = moveBuffer.initialCoords[axis] + iParam;
+				if ((arcAxesMoving & (1 << axis)) != 0)
 				{
-					moveBuffer.coords[axis] += xParam;
-				}
-				else
-				{
-					moveBuffer.coords[axis] = xParam - currentTool->GetOffset()[axis];
+					if (axesRelative)
+					{
+						moveBuffer.coords[axis] += xParam;
+					}
+					else
+					{
+						moveBuffer.coords[axis] = xParam - currentTool->GetOffset()[axis];
+					}
 				}
 			}
 		}
@@ -2369,24 +2354,16 @@ bool GCodes::SaveHeightMap(GCodeBuffer& gb, StringRef& reply) const
 	return err;
 }
 
-// Clear the height map
-void GCodes::ClearHeightMap() const
-{
-	HeightMap& heightMap = reprap.GetMove()->AccessBedProbeGrid();
-	heightMap.ClearGridHeights();
-	heightMap.UseHeightMap(false);
-}
-
 // Return the current coordinates as a printable string.
 // Coordinates are updated at the end of each movement, so this won't tell you where you are mid-movement.
 void GCodes::GetCurrentCoordinates(StringRef& s) const
 {
 	float liveCoordinates[DRIVES];
 	reprap.GetMove()->LiveCoordinates(liveCoordinates, reprap.GetCurrentXAxes());
-	const Tool *currentTool = reprap.GetCurrentTool();
+	const Tool * const currentTool = reprap.GetCurrentTool();
 	if (currentTool != nullptr)
 	{
-		const float *offset = currentTool->GetOffset();
+		const float * const offset = currentTool->GetOffset();
 		for (size_t i = 0; i < numAxes; ++i)
 		{
 			liveCoordinates[i] += offset[i];
@@ -2396,7 +2373,7 @@ void GCodes::GetCurrentCoordinates(StringRef& s) const
 	s.Clear();
 	for (size_t axis = 0; axis < numAxes; ++axis)
 	{
-		s.catf("%c: %.2f ", axisLetters[axis], liveCoordinates[axis]);
+		s.catf("%c: %.3f ", axisLetters[axis], liveCoordinates[axis]);
 	}
 	for (size_t i = numAxes; i < DRIVES; i++)
 	{
@@ -2951,21 +2928,8 @@ void GCodes::HandleReply(GCodeBuffer& gb, bool error, const char* reply)
 	}
 
 	const Compatibility c = (&gb == serialGCode || &gb == telnetGCode) ? platform->Emulating() : me;
-	MessageType type = GENERIC_MESSAGE;
-	if (&gb == httpGCode)
-	{
-		type = HTTP_MESSAGE;
-	}
-	else if (&gb == telnetGCode)
-	{
-		type = TELNET_MESSAGE;
-	}
-	else if (&gb == serialGCode)
-	{
-		type = HOST_MESSAGE;
-	}
-
-	const char* response = (gb.Seen('M') && gb.GetIValue() == 998) ? "rs " : "ok";
+	const MessageType type = gb.GetResponseMessageType();
+	const char* const response = (gb.Seen('M') && gb.GetIValue() == 998) ? "rs " : "ok";
 	const char* emulationType = 0;
 
 	switch (c)
@@ -3054,21 +3018,8 @@ void GCodes::HandleReply(GCodeBuffer& gb, bool error, OutputBuffer *reply)
 	}
 
 	const Compatibility c = (&gb == serialGCode || &gb == telnetGCode) ? platform->Emulating() : me;
-	MessageType type = GENERIC_MESSAGE;
-	if (&gb == httpGCode)
-	{
-		type = HTTP_MESSAGE;
-	}
-	else if (&gb == telnetGCode)
-	{
-		type = TELNET_MESSAGE;
-	}
-	else if (&gb == serialGCode)
-	{
-		type = HOST_MESSAGE;
-	}
-
-	const char* response = (gb.Seen('M') && gb.GetIValue() == 998) ? "rs " : "ok";
+	const MessageType type = gb.GetResponseMessageType();
+	const char* const response = (gb.Seen('M') && gb.GetIValue() == 998) ? "rs " : "ok";
 	const char* emulationType = nullptr;
 
 	switch (c)
@@ -3546,7 +3497,7 @@ bool GCodes::WriteConfigOverrideFile(StringRef& reply, const char *fileName) con
 }
 
 // Store a standard-format temperature report in 'reply'. This doesn't put a newline character at the end.
-void GCodes::GenerateTemperatureReport(StringRef& reply)
+void GCodes::GenerateTemperatureReport(StringRef& reply) const
 {
 	const int8_t bedHeater = reprap.GetHeat()->GetBedHeater();
 	const int8_t chamberHeater = reprap.GetHeat()->GetChamberHeater();
@@ -3575,6 +3526,70 @@ void GCodes::GenerateTemperatureReport(StringRef& reply)
 	{
 		reply.catf(" C:%.1f", reprap.GetHeat()->GetTemperature(chamberHeater));
 	}
+}
+
+// Check whether we need to report temperatures or status.
+// 'reply' is a convenient buffer that is free for us to use.
+void GCodes::CheckReportDue(GCodeBuffer& gb, StringRef& reply) const
+{
+	const uint32_t now = millis();
+	if (gb.timerRunning)
+	{
+		if (now - gb.whenTimerStarted >= 1000)
+		{
+			if (platform->Emulating() == marlin && (&gb == serialGCode || &gb == telnetGCode))
+			{
+				// In Marlin emulation mode we should return a standard temperature report every second
+				GenerateTemperatureReport(reply);
+				reply.cat('\n');
+				platform->Message(HOST_MESSAGE, reply.Pointer());
+			}
+			if (lastAuxStatusReportType >= 0)
+			{
+				// Send a standard status response for PanelDue
+				OutputBuffer * const statusBuf = GenerateJsonStatusResponse(0, -1, ResponseSource::AUX);
+				if (statusBuf != nullptr)
+				{
+					platform->AppendAuxReply(statusBuf);
+				}
+			}
+			gb.whenTimerStarted = now;
+		}
+	}
+	else
+	{
+		gb.whenTimerStarted = now;
+		gb.timerRunning = true;
+	}
+}
+
+// Generate a M408 response
+// Return the output buffer containing the response, or nullptr if we failed
+OutputBuffer *GCodes::GenerateJsonStatusResponse(int type, int seq, ResponseSource source) const
+{
+	OutputBuffer *statusResponse = nullptr;
+	switch (type)
+	{
+		case 0:
+		case 1:
+			statusResponse = reprap.GetLegacyStatusResponse(type + 2, seq);
+			break;
+
+		case 2:
+		case 3:
+		case 4:
+			statusResponse = reprap.GetStatusResponse(type - 1, source);
+			break;
+
+		case 5:
+			statusResponse = reprap.GetConfigResponse();
+			break;
+	}
+	if (statusResponse != nullptr)
+	{
+		statusResponse->cat('\n');
+	}
+	return statusResponse;
 }
 
 // Resource locking/unlocking

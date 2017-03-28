@@ -23,6 +23,7 @@ Licence: GPL
 #define GCODES_H
 
 #include "RepRapFirmware.h"
+#include "RepRap.h"			// for type ResponseSource
 #include "Libraries/sha1/sha1.h"
 #include "Platform.h"		// for type EndStopHit
 #include "GCodeInput.h"
@@ -215,7 +216,9 @@ private:
 	void ManageTool(GCodeBuffer& gb, StringRef& reply);					// Create a new tool definition
 	void SetToolHeaters(Tool *tool, float temperature);					// Set all a tool's heaters to the temperature.  For M104...
 	bool ToolHeatersAtSetTemperatures(const Tool *tool, bool waitWhenCooling) const; // Wait for the heaters associated with the specified tool to reach their set temperatures
-	void GenerateTemperatureReport(StringRef& reply);					// Store a standard-format temperature report in reply
+	void GenerateTemperatureReport(StringRef& reply) const;				// Store a standard-format temperature report in reply
+	OutputBuffer *GenerateJsonStatusResponse(int type, int seq, ResponseSource source) const;	// Generate a M408 response
+	void CheckReportDue(GCodeBuffer& gb, StringRef& reply) const;		// Check whether we need to report temperatures or status
 
 	void SetAllAxesNotHomed();											// Flag all axes as not homed
 	void SetPositions(const float positionNow[DRIVES], bool doBedCompensation = true); // Set the current position to be this
@@ -235,7 +238,6 @@ private:
 	bool ProbeGrid(GCodeBuffer& gb, StringRef& reply);					// Start probing the grid, returning true if we didn't because of an error
 	bool LoadHeightMap(GCodeBuffer& gb, StringRef& reply) const;		// Load the height map from file
 	bool SaveHeightMap(GCodeBuffer& gb, StringRef& reply) const;		// Save the height map to file
-	void ClearHeightMap() const;										// Clear the height map
 
 	bool WriteConfigOverrideFile(StringRef& reply, const char *fileName) const; // Write the config-override file
 	void CopyConfigFinalValues(GCodeBuffer& gb);						// Copy the feed rate etc. from the daemon to the input channels
@@ -356,6 +358,7 @@ private:
 	// Misc
 	float longWait;								// Timer for things that happen occasionally (seconds)
 	uint32_t lastWarningMillis;					// When we last sent a warning message for things that can happen very often
+	int8_t lastAuxStatusReportType;				// The type of the last status report requested by PanelDue
 	bool isWaiting;								// True if waiting to reach temperature
 	bool cancelWait;							// Set true to cancel waiting
 	bool displayNoToolWarning;					// True if we need to display a 'no tool selected' warning

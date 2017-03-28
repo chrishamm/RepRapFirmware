@@ -37,26 +37,28 @@ void GCodeBuffer::Diagnostics(MessageType mtype)
 {
 	switch (bufferState)
 	{
-		case GCodeBufferState::idle:
-			reprap.GetPlatform()->MessageF(mtype, "%s is idle", identity);
-			break;
+	case GCodeBufferState::idle:
+		scratchString.printf("%s is idle", identity);
+		break;
 
-		case GCodeBufferState::ready:
-			reprap.GetPlatform()->MessageF(mtype, "%s is ready with \"%s\"", identity, Buffer());
-			break;
+	case GCodeBufferState::ready:
+		scratchString.printf("%s is ready with \"%s\"", identity, Buffer());
+		break;
 
-		case GCodeBufferState::executing:
-			reprap.GetPlatform()->MessageF(mtype, "%s is doing \"%s\"", identity, Buffer());
+	case GCodeBufferState::executing:
+		scratchString.printf("%s is doing \"%s\"", identity, Buffer());
 	}
 
-	reprap.GetPlatform()->Message(mtype, " (states ");
+	scratchString.cat(" in state(s)");
 	const GCodeMachineState *ms = machineState;
 	do
 	{
-		reprap.GetPlatform()->MessageF(mtype, "%d%s", ms->state, (ms->previous == nullptr) ? ")\n" : ", ");
+		scratchString.catf(" %d", ms->state);
 		ms = ms->previous;
 	}
 	while (ms != nullptr);
+	scratchString.cat('\n');
+	reprap.GetPlatform()->Message(mtype, scratchString.Pointer());
 }
 
 int GCodeBuffer::CheckSum() const

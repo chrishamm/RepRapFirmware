@@ -113,7 +113,7 @@ size_t RegularGCodeInput::BytesCached() const
 	return GCodeInputBufferSize - readingPointer + writingPointer;
 }
 
-void RegularGCodeInput::Put(const char c)
+void RegularGCodeInput::Put(MessageType mtype, const char c)
 {
 	if (BufferSpaceLeft() == 0)
 	{
@@ -210,7 +210,8 @@ void RegularGCodeInput::Put(const char c)
 			if (c <= ' ' || c == ';')
 			{
 				// Diagnostics requested - report them now
-				reprap.Diagnostics(GENERIC_MESSAGE);
+				// Only send the report to the appropriate channel, because if we send it as a generic message instead then it gets truncated.
+				reprap.Diagnostics(mtype);
 
 				// But don't report them twice
 				Reset();
@@ -230,12 +231,12 @@ void RegularGCodeInput::Put(const char c)
 	}
 }
 
-void RegularGCodeInput::Put(const char *buf)
+void RegularGCodeInput::Put(MessageType mtype, const char *buf)
 {
-	Put(buf, strlen(buf) + 1);
+	Put(mtype, buf, strlen(buf) + 1);
 }
 
-void RegularGCodeInput::Put(const char *buf, size_t len)
+void RegularGCodeInput::Put(MessageType mtype, const char *buf, size_t len)
 {
 	if (len > BufferSpaceLeft())
 	{
@@ -243,9 +244,9 @@ void RegularGCodeInput::Put(const char *buf, size_t len)
 		return;
 	}
 
-	for(size_t i = 0; i < len; i++)
+	for (size_t i = 0; i < len; i++)
 	{
-		Put(buf[i]);
+		Put(mtype, buf[i]);
 	}
 }
 

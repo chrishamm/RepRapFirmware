@@ -49,7 +49,6 @@ private:
 	Platform* platform;
 
 	FIL file;
-	unsigned int lastBufferEntry;
 	volatile unsigned int openCount;
 	volatile bool closeRequested;
 

@@ -44,7 +44,7 @@ public:
 	float GetProgress() const;							// Returns the progress of the current action
 
 private:
-	void ProcessCommand();			
+	void ProcessCommand();
 
 	Platform *platform;
 	float longWait;

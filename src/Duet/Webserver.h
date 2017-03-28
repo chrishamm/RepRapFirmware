@@ -227,7 +227,6 @@ protected:
 		const char* GetKeyValue(const char *key) const;	// return the value of the specified key, or nullptr if not present
 
 		// Responses from GCodes class
-
 		uint32_t seq;									// Sequence number for G-Code replies
 		OutputStack *gcodeReply;
 
@@ -326,7 +325,6 @@ protected:
 		bool ProcessLine();
 
 		// Converted response from GCodes class (NL -> CRNL)
-
 		OutputBuffer * volatile gcodeReply;
 	};
 	TelnetInterpreter *telnetInterpreter;

@@ -38,7 +38,7 @@ void Scanner::Spin()
 		platform->ClassReport(longWait);
 		return;
 	}
-		
+
 	// Check if the device is still present
 	if (!SERIAL_MAIN_DEVICE)
 	{

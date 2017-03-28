@@ -419,6 +419,14 @@ public:
 	float Acceleration(size_t drive) const;
 	const float* Accelerations() const;
 	void SetAcceleration(size_t drive, float value);
+	float GetMaxPrintingAcceleration() const
+		{ return maxPrintingAcceleration; }
+	void SetMaxPrintingAcceleration(float acc)
+		{ maxPrintingAcceleration = acc; }
+	float GetMaxTravelAcceleration() const
+		{ return maxTravelAcceleration; }
+	void SetMaxTravelAcceleration(float acc)
+		{ maxTravelAcceleration = acc; }
 	float MaxFeedrate(size_t drive) const;
 	const float* MaxFeedrates() const;
 	void SetMaxFeedrate(size_t drive, float value);
@@ -545,7 +553,7 @@ public:
 
 	// AUX device
 	void Beep(int freq, int ms);
-	void SendMessage(const char* msg);
+	void SendAuxMessage(const char* msg);
 
 	// Hotend configuration
 	float GetFilamentWidth() const;
@@ -681,6 +689,8 @@ private:
 	Pin endStopPins[DRIVES];
 	float maxFeedrates[DRIVES];
 	float accelerations[DRIVES];
+	float maxPrintingAcceleration;
+	float maxTravelAcceleration;
 	float driveStepsPerUnit[DRIVES];
 	float instantDvs[DRIVES];
 	float pressureAdvance[MaxExtruders];

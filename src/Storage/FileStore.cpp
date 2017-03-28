@@ -16,7 +16,6 @@ void FileStore::Init()
 {
 	inUse = false;
 	writing = false;
-	lastBufferEntry = 0;
 	openCount = 0;
 	closeRequested = false;
 }
@@ -289,7 +288,7 @@ bool FileStore::Write(const char *s, size_t len)
 	}
 	if ((writeStatus != FR_OK) || (bytesWritten != len))
 	{
-		platform->Message(GENERIC_MESSAGE, "Error: Cannot write to file. Disc may be full.\n");
+		platform->Message(GENERIC_MESSAGE, "Error: Cannot write to file. Drive may be full.\n");
 		return false;
 	}
 	return true;

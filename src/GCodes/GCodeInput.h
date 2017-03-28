@@ -73,9 +73,9 @@ public:
 	bool FillBuffer(GCodeBuffer *gb) override;			// Fill a GCodeBuffer with the last available G-code
 	size_t BytesCached() const override;				// How many bytes have been cached?
 
-	void Put(const char c);								// Append a single character
-	void Put(const char *buf);							// Append a null-terminated string to the buffer
-	void Put(const char *buf, size_t len);				// Append a generic string to the buffer
+	void Put(MessageType mtype, const char c);			// Append a single character
+	void Put(MessageType mtype, const char *buf);		// Append a null-terminated string to the buffer
+	void Put(MessageType mtype, const char *buf, size_t len);	// Append a generic string to the buffer
 
 	size_t BufferSpaceLeft() const;						// How much space do we have left?
 

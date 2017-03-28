@@ -964,7 +964,7 @@ void Webserver::HttpInterpreter::GetJsonResponse(const char* request, OutputBuff
 	else if (StringEquals(request, "gcode") && GetKeyValue("gcode") != nullptr)
 	{
 		RegularGCodeInput * const httpInput = reprap.GetGCodes()->GetHTTPInput();
-		httpInput->Put(GetKeyValue("gcode"));
+		httpInput->Put(HTTP_MESSAGE, GetKeyValue("gcode"));
 		response->printf("{\"buff\":%u}", httpInput->BufferSpaceLeft());
 	}
 	else if (StringEquals(request, "upload"))
@@ -2161,7 +2161,6 @@ void Webserver::FtpInterpreter::ProcessLine()
 			{
 				SendReply(500, "Unknown command.");
 			}
-
 			break;
 
 		case waitingForPasvPort:
@@ -2176,7 +2175,6 @@ void Webserver::FtpInterpreter::ProcessLine()
 			{
 				webserver->currentTransaction->Defer(DeferralMode::ResetData);
 			}
-
 			break;
 
 		case pasvPortConnected:
@@ -2644,7 +2642,7 @@ bool Webserver::TelnetInterpreter::ProcessLine()
 
 			// All other codes are stored for the GCodes class
 			RegularGCodeInput * const telnetInput = reprap.GetGCodes()->GetTelnetInput();
-			telnetInput->Put(clientMessage);
+			telnetInput->Put(TELNET_MESSAGE, clientMessage);
 			break;
 	}
 	return false;

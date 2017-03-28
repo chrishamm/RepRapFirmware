@@ -697,7 +697,7 @@ bool Webserver::ProcessFirstFragment(HttpSession& session, const char* command, 
 		if (gcodeVal != nullptr)
 		{
 			RegularGCodeInput * const httpInput = reprap.GetGCodes()->GetHTTPInput();
-			httpInput->Put(gcodeVal);
+			httpInput->Put(HTTP_MESSAGE, gcodeVal);
 			if (OutputBuffer::Allocate(response))
 			{
 				response->printf("{\"buff\":%u}", httpInput->BufferSpaceLeft());
