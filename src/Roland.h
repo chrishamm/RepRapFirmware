@@ -20,6 +20,8 @@ Licence: GPL
 #ifndef ROLAND_H
 #define ROLAND_H
 
+#include "RepRapFirmware.h"
+
 #if SUPPORT_ROLAND
 
 // This class allows the RepRap firmware to transmit commands to a Roland mill

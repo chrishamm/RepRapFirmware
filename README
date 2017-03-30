@@ -45,14 +45,18 @@ Naming conventions:
 
 Structure:
 
-There are six main classes:
+There are ten main classes:
 
   * RepRap
   * GCodes
   * Heat
   * Move
-  * Platform, and
+  * Platform
+  * Network
   * Webserver
+  * Roland
+  * Scanner, and
+  * PrintMonitor
 
 RepRap:
 
@@ -78,11 +82,28 @@ controlling electronics.  It implements the interface between all the other clas
 All the other classes are completely machine-independent (though they may declare arrays dimensioned
 to values #defined in Platform.h).
 
+Network:
+
+This class implements a basic TCP interface for the Webserver classes using lwip.
+
 Webserver:
 
 This class talks to the network (via Platform) and implements a simple webserver to give an interactive
 interface to the RepRap machine.  It uses the Knockout and Jquery Javascript libraries to achieve this.
+In addition, FTP and Telnet servers are provided for easier SD card file management and G-Code handling.
 
+Roland:
+
+This class can interface with a Roland mill (e.g. Roland MDX-20/15) and allows the underlying hardware
+to act as a G-Code proxy, which translates G-Codes to internal Roland commands.
+
+Scanner:
+This is an extension meant for 3D scanner boards. Refer to M750 ff. for the exact usage of this module.
+
+PrintMonitor:
+
+This class provides methods to obtain statistics (height, filament usage etc.) from generated G-Code
+files and to calculate estimated print end-times for a live print.
 
 
 When the software is running there is one single instance of each main class, and all the memory allocation is

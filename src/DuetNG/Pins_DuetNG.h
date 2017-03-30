@@ -25,6 +25,7 @@ const size_t NumFirmwareUpdateModules = 1;		// 1 module
 
 #define SUPPORT_INKJET		0					// set nonzero to support inkjet control
 #define SUPPORT_ROLAND		0					// set nonzero to support Roland mill
+#define SUPPORT_SCANNER		1					// set zero to disable support for FreeLSS scanners
 
 // The physical capabilities of the machine
 

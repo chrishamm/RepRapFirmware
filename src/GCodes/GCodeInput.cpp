@@ -58,7 +58,6 @@ size_t StreamGCodeInput::BytesCached() const
 
 // Dynamic G-code input class for caching codes from software-defined sources
 
-
 RegularGCodeInput::RegularGCodeInput(bool removeComments): stripComments(removeComments),
 	state(GCodeInputState::idle), buffer(reinterpret_cast<char * const>(buf32)), writingPointer(0), readingPointer(0)
 {

@@ -14,6 +14,7 @@
 #include "Heating/Heat.h"
 #include "Movement/Move.h"
 #include "Network.h"
+#include "Scanner.h"
 #include "PrintMonitor.h"
 #include "RepRap.h"
 #include "Tool.h"
@@ -3315,6 +3316,99 @@ bool GCodes::HandleMcode(GCodeBuffer& gb, StringRef& reply)
 				}
 			}
 		}
+		break;
+
+	case 750: // Enable 3D scanner extension
+#if SUPPORT_SCANNER
+		reprap.GetScanner()->Enable();
+#else
+		reply.copy("Scanner support not built-in");
+		error = true;
+#endif
+		break;
+
+	case 751: // Register 3D scanner extension over USB
+#if SUPPORT_SCANNER
+		if (&gb == serialGCode)
+		{
+			if (reprap.GetScanner()->IsEnabled())
+			{
+				reprap.GetScanner()->Register();
+			}
+			else
+			{
+				reply.copy("Scanner extension is not enabled");
+				error = true;
+			}
+		}
+		else
+		{
+			reply.copy("Invalid source for this M-code");
+			error = true;
+		}
+#else
+		reply.copy("Scanner support not built-in");
+		error = true;
+#endif
+		break;
+
+	case 752: // Start 3D scan
+#if SUPPORT_SCANNER
+		if (gb.Seen('P'))
+		{
+			const char *file = gb.GetString();
+			if (reprap.GetScanner()->IsEnabled())
+			{
+				if (reprap.GetScanner()->IsRegistered())
+				{
+					reprap.GetScanner()->StartScan(file);
+				}
+				else
+				{
+					reply.copy("Scanner extension is not registered");
+					error = true;
+				}
+			}
+			else
+			{
+				reply.copy("Scanner extension is not enabled");
+				error = true;
+			}
+		}
+		else
+		{
+			reply.copy("Missing filename");
+			error = true;
+		}
+#else
+		reply.copy("Scanner support not built-in");
+		error = true;
+#endif
+		break;
+
+	case 753: // Cancel 3D scan
+#if SUPPORT_SCANNER
+		if (reprap.GetScanner()->IsEnabled())
+		{
+			if (reprap.GetScanner()->IsRegistered())
+			{
+				reprap.GetScanner()->CancelScan();
+			}
+			else
+			{
+				reply.copy("Scanner extension is not registered");
+				error = true;
+			}
+		}
+		else
+		{
+			reply.copy("Scanner extension is not enabled");
+			error = true;
+		}
+#else
+		reply.copy("Scanner support not built-in");
+		error = true;
+#endif
 		break;
 
 	case 905: // Set current RTC date and time

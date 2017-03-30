@@ -3,11 +3,11 @@
 #
 # written by Christian Hammacher, 2016-2017
 
-VERSION := 1.18-b3
-DATE := 2017-03-17
+VERSION := 1.18-b4
+DATE := 2017-03-30
 
 GCC_VERSION := 4.8.3-2014q1
-DUET_BOARD_VERSION := 2.1.0
+DUET_BOARD_VERSION := 2.1.1
 
 # For Duet 0.6 / 0.8.5
 BOSSAC_VERSION := 1.3a-arduino

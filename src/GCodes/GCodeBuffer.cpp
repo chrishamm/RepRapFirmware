@@ -73,18 +73,11 @@ int GCodeBuffer::CheckSum() const
 // not yet complete.  If true, it is complete and ready to be acted upon.
 bool GCodeBuffer::Put(char c)
 {
-	if (c == '\r')
-	{
-		// Ignore carriage return, it messes up filenames sometimes if it appears in macro files etc.
-		// Alternatively, we could handle it in the same way as linefeed, and add an optimisation to ignore blank lines.
-		return false;
-	}
-
 	if (c == ';')
 	{
 		inComment = true;
 	}
-	else if (c == '\n' || c == 0)
+	else if (c == '\n' || c == '\r' || c == 0)
 	{
 		gcodeBuffer[gcodePointer] = 0;
 		if (reprap.Debug(moduleGcodes) && gcodeBuffer[0] != 0 && !writingFileDirectory) // Don't bother with blank/comment lines

@@ -29,6 +29,7 @@
 #include "Heating/Heat.h"
 #include "Platform.h"
 #include "Movement/Move.h"
+#include "Scanner.h"
 #include "PrintMonitor.h"
 #include "RepRap.h"
 #include "Tool.h"
@@ -728,9 +729,13 @@ void GCodes::StartNextGCode(GCodeBuffer& gb, StringRef& reply)
 		// Telnet
 		telnetInput->FillBuffer(telnetGCode);
 	}
-	else if (&gb == serialGCode)
+	else if (&gb == serialGCode
+#if SUPPORT_SCANNER
+			&& !reprap.GetScanner()->IsRegistered()
+#endif
+			)
 	{
-		// USB interface
+		// USB interface. This line may be shared with a 3D scanner
 		serialInput->FillBuffer(serialGCode);
 	}
 	else if (&gb == auxGCode)

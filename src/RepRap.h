@@ -79,6 +79,7 @@ public:
     Network* GetNetwork() const;
     Webserver* GetWebserver() const;
 	Roland* GetRoland() const;
+	Scanner* GetScanner() const;
     PrintMonitor* GetPrintMonitor() const;
 
     void Tick();
@@ -114,6 +115,7 @@ private:
     GCodes* gCodes;
     Webserver* webserver;
 	Roland* roland;
+	Scanner* scanner;
     PrintMonitor* printMonitor;
 
     Tool* toolList;
@@ -148,6 +150,7 @@ inline GCodes* RepRap::GetGCodes() const { return gCodes; }
 inline Network* RepRap::GetNetwork() const { return network; }
 inline Webserver* RepRap::GetWebserver() const { return webserver; }
 inline Roland* RepRap::GetRoland() const { return roland; }
+inline Scanner* RepRap::GetScanner() const { return scanner; }
 inline PrintMonitor* RepRap::GetPrintMonitor() const { return printMonitor; }
 
 inline bool RepRap::Debug(Module m) const { return debug & (1 << m); }
