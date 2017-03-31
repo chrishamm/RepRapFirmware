@@ -17,9 +17,15 @@ void Scanner::Init()
 	longWait = platform->Time();
 
 	enabled = false;
-	state = ScannerState::Disconnected;
+	SetState(ScannerState::Disconnected);
 	bufferPointer = 0;
 	scanProgress = 0.0f;
+}
+
+void Scanner::SetState(const ScannerState s)
+{
+	doingGCodes = false;
+	state = s;
 }
 
 void Scanner::Exit()
@@ -44,9 +50,9 @@ void Scanner::Spin()
 	{
 		if (state == ScannerState::Scanning || state == ScannerState::Uploading)
 		{
-			platform->Message(GENERIC_MESSAGE, "Scanner disconnected while a 3D scan was in progress");
+			platform->Message(GENERIC_MESSAGE, "Warning: Scanner disconnected while a 3D scan was in progress");
 		}
-		state = ScannerState::Disconnected;
+		SetState(ScannerState::Disconnected);
 
 		if (fileBeingUploaded != nullptr)
 		{
@@ -81,12 +87,12 @@ void Scanner::Spin()
 				{
 					if (reprap.Debug(moduleScanner))
 					{
-						platform->MessageF(GENERIC_MESSAGE, "Finished uploading %u bytes of scan data\n", uploadSize);
+						platform->MessageF(HTTP_MESSAGE, "Finished uploading %u bytes of scan data\n", uploadSize);
 					}
 
 					fileBeingUploaded->Close();
 					fileBeingUploaded = nullptr;
-					state = ScannerState::Idle;
+					SetState(ScannerState::Idle);
 				}
 
 				bufferPointer = 0;
@@ -96,7 +102,7 @@ void Scanner::Spin()
 				platform->Message(GENERIC_MESSAGE, "Error: Could not write scan file\n");
 				fileBeingUploaded->Close();
 				fileBeingUploaded = nullptr;
-				state = ScannerState::Idle;
+				SetState(ScannerState::Idle);
 			}
 		}
 
@@ -104,8 +110,8 @@ void Scanner::Spin()
 		return;
 	}
 
-	// Any incoming codes from the scanner interface?
-	if (SERIAL_MAIN_DEVICE.available() > 0)
+	// Pick up incoming commands only if the GCodeBuffer is ready. The GCodes class will do the processing for us.
+	if (serialGCode->GetState() == GCodeState::normal && SERIAL_MAIN_DEVICE.available() > 0)
 	{
 		char b = static_cast<char>(SERIAL_MAIN_DEVICE.read());
 		if (b == '\n' || b == '\r')
@@ -131,13 +137,26 @@ void Scanner::Spin()
 // Process incoming commands from the scanner board
 void Scanner::ProcessCommand()
 {
+	// Output some info if debugging is enabled
+	if (reprap.Debug(moduleScanner))
+	{
+		platform->MessageF(HTTP_MESSAGE, "Scanner request: '%s'\n", buffer);
+	}
+
 	// Register request: M751
 	if (StringEquals(buffer, "M751"))
 	{
 		SERIAL_MAIN_DEVICE.write("OK\n");
 		SERIAL_MAIN_DEVICE.flush();
 
-		state = ScannerState::Idle;
+		SetState(ScannerState::Idle);
+	}
+
+	// G-Code request: GCODE <CODE>
+	else if (StringStartsWith(buffer, "GCODE "))
+	{
+		doingGCodes = true;
+		serialGCode->Put(&buffer[6], bufferPointer - 6);
 	}
 
 	// Progress indicator: PROGRESS <PERCENT>
@@ -161,18 +180,17 @@ void Scanner::ProcessCommand()
 			}
 		}
 
-		if (reprap.Debug(moduleScanner))
-		{
-			platform->MessageF(GENERIC_MESSAGE, "Starting scan upload for file %s (%u bytes total)\n", filename, uploadSize);
-		}
-
 		if (filename != nullptr)
 		{
 			uploadBytesLeft = uploadSize;
 			fileBeingUploaded = platform->GetFileStore(SCANS_DIRECTORY, filename, true);
 			if (fileBeingUploaded != nullptr)
 			{
-				state = ScannerState::Uploading;
+				SetState(ScannerState::Uploading);
+				if (reprap.Debug(moduleScanner))
+				{
+					platform->MessageF(HTTP_MESSAGE, "Starting scan upload for file %s (%u bytes total)\n", filename, uploadSize);
+				}
 			}
 		}
 		else
@@ -198,7 +216,7 @@ void Scanner::ProcessCommand()
 		}
 
 		// reset the state
-		state = ScannerState::Idle;
+		SetState(ScannerState::Idle);
 	}
 }
 
@@ -220,7 +238,7 @@ void Scanner::Register()
 	SERIAL_MAIN_DEVICE.write("OK\n");
 	SERIAL_MAIN_DEVICE.flush();
 
-	state = ScannerState::Idle;
+	SetState(ScannerState::Idle);
 }
 
 // Initiate a new scan
@@ -240,7 +258,7 @@ void Scanner::StartScan(const char *filename)
 	// In theory it would be good to verify if this succeeds,
 	// but the scanner client cannot give feedback (yet)
 	scanProgress = 0.0f;
-	state = ScannerState::Scanning;
+	SetState(ScannerState::Scanning);
 }
 
 // Cancel the running 3D scan
@@ -254,7 +272,7 @@ void Scanner::CancelScan()
 	SERIAL_MAIN_DEVICE.write("CANCEL\n");
 	SERIAL_MAIN_DEVICE.flush();
 
-	state = ScannerState::Idle;
+	SetState(ScannerState::Idle);
 }
 
 // Return the progress of the current operation

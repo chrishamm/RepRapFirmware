@@ -127,6 +127,10 @@ void GCodes::Init()
 	retractSpeed = unRetractSpeed = DefaultRetractSpeed * SecondsToMinutes;
 	isRetracted = false;
 	lastAuxStatusReportType = -1;						// no status reports requested yet
+
+#if SUPPORT_SCANNER
+	reprap.GetScanner()->SetGCodeBuffer(serialGCode);
+#endif
 }
 
 // This is called from Init and when doing an emergency stop

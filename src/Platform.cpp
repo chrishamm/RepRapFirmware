@@ -2500,7 +2500,7 @@ void Platform::Message(MessageType type, const char *message)
 		case HOST_MESSAGE:
 			// Message that is to be sent via the USB line (non-blocking)
 #if SUPPORT_SCANNER
-			if (!reprap.GetScanner()->IsRegistered())
+			if (!reprap.GetScanner()->IsRegistered() || reprap.GetScanner()->DoingGCodes())
 #endif
 			{
 				// Ensure we have a valid buffer to write to that isn't referenced for other destinations
@@ -2571,7 +2571,7 @@ void Platform::Message(const MessageType type, OutputBuffer *buffer)
 		case HOST_MESSAGE:
 			if (!SERIAL_MAIN_DEVICE
 #if SUPPORT_SCANNER
-					|| reprap.GetScanner()->IsRegistered()
+					|| (reprap.GetScanner()->IsRegistered() && !reprap.GetScanner()->DoingGCodes())
 #endif
 					)
 			{
