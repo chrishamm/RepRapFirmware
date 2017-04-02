@@ -578,7 +578,7 @@ OutputBuffer *RepRap::GetStatusResponse(uint8_t type, ResponseSource source)
 		}
 		if (ch == '[')
 		{
-			response->cat("[");
+			response->cat(ch);
 		}
 
 		// XYZ positions
@@ -1191,7 +1191,7 @@ OutputBuffer *RepRap::GetLegacyStatusResponse(uint8_t type, int seq)
 		response->catf("%c%.1f", ch, gCodes->GetRawExtruderPosition(drive));
 		ch = ',';
 	}
-	response->cat((ch == ']') ? "[]" : "]");
+	response->cat((ch == '[') ? "[]" : "]");
 
 	// Send the speed and extruder override factors
 	response->catf(",\"sfactor\":%.2f,\"efactor\":", gCodes->GetSpeedFactor() * 100.0);
