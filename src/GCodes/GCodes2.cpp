@@ -3324,7 +3324,7 @@ bool GCodes::HandleMcode(GCodeBuffer& gb, StringRef& reply)
 		{
 			if (reprap.GetScanner()->IsEnabled())
 			{
-				reprap.GetScanner()->Register();
+				result = reprap.GetScanner()->Register();
 			}
 			else
 			{
@@ -3348,21 +3348,30 @@ bool GCodes::HandleMcode(GCodeBuffer& gb, StringRef& reply)
 		if (gb.Seen('P'))
 		{
 			const char *file = gb.GetString();
-			if (reprap.GetScanner()->IsEnabled())
+			if (gb.Seen('S'))
 			{
-				if (reprap.GetScanner()->IsRegistered())
+				const int sParam = gb.GetIValue();
+				if (reprap.GetScanner()->IsEnabled())
 				{
-					reprap.GetScanner()->StartScan(file);
+					if (reprap.GetScanner()->IsRegistered())
+					{
+						result = reprap.GetScanner()->StartScan(file, sParam);
+					}
+					else
+					{
+						reply.copy("Scanner is not registered");
+						error = true;
+					}
 				}
 				else
 				{
-					reply.copy("Scanner extension is not registered");
+					reply.copy("Scanner extension is not enabled");
 					error = true;
 				}
 			}
 			else
 			{
-				reply.copy("Scanner extension is not enabled");
+				reply.copy("Missing length/degree parameter");
 				error = true;
 			}
 		}
@@ -3377,17 +3386,17 @@ bool GCodes::HandleMcode(GCodeBuffer& gb, StringRef& reply)
 #endif
 		break;
 
-	case 753: // Cancel 3D scan
+	case 753: // Cancel current 3D scanner action
 #if SUPPORT_SCANNER
 		if (reprap.GetScanner()->IsEnabled())
 		{
 			if (reprap.GetScanner()->IsRegistered())
 			{
-				reprap.GetScanner()->CancelScan();
+				result = reprap.GetScanner()->Cancel();
 			}
 			else
 			{
-				reply.copy("Scanner extension is not registered");
+				reply.copy("Scanner is not registered");
 				error = true;
 			}
 		}
@@ -3402,6 +3411,81 @@ bool GCodes::HandleMcode(GCodeBuffer& gb, StringRef& reply)
 #endif
 		break;
 
+	case 754: // Calibrate scanner
+#if SUPPORT_SCANNER
+		if (reprap.GetScanner()->IsEnabled())
+		{
+			if (reprap.GetScanner()->IsRegistered())
+			{
+				result = reprap.GetScanner()->Calibrate();
+			}
+			else
+			{
+				reply.copy("Scanner is not registered");
+				error = true;
+			}
+		}
+		else
+		{
+			reply.copy("Scanner extension is not enabled");
+			error = true;
+		}
+#else
+		reply.copy("Scanner support not built-in");
+		error = true;
+#endif
+		break;
+
+	case 755: // Set alignment mode for 3D scanner
+#if SUPPORT_SCANNER
+		if (reprap.GetScanner()->IsEnabled())
+		{
+			if (reprap.GetScanner()->IsRegistered())
+			{
+				bool on = (gb.Seen('P') && gb.GetIValue() > 0);
+				result = reprap.GetScanner()->SetAlignment(on);
+			}
+			else
+			{
+				reply.copy("Scanner is not registered");
+				error = true;
+			}
+		}
+		else
+		{
+			reply.copy("Scanner extension is not enabled");
+			error = true;
+		}
+#else
+		reply.copy("Scanner support not built-in");
+		error = true;
+#endif
+		break;
+
+	case 756: // Shutdown 3D scanner
+#if SUPPORT_SCANNER
+		if (reprap.GetScanner()->IsEnabled())
+		{
+			if (reprap.GetScanner()->IsRegistered())
+			{
+				result = reprap.GetScanner()->Shutdown();
+			}
+			else
+			{
+				reply.copy("Scanner is not registered");
+				error = true;
+			}
+		}
+		else
+		{
+			reply.copy("Scanner extension is not enabled");
+			error = true;
+		}
+#else
+		reply.copy("Scanner support not built-in");
+		error = true;
+#endif
+		break;
 	case 905: // Set current RTC date and time
 		{
 			const time_t now = platform->GetDateTime();

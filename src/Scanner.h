@@ -15,12 +15,25 @@
 
 const size_t ScanBufferSize = 512;						// Buffer for incoming codes and upload chunks
 
-enum class ScannerState: char
+enum class ScannerState
 {
-	Disconnected = 'D',
-	Idle = 'I',
-	Scanning = 'S',
-	Uploading = 'U'
+	Disconnected,		// scanner mode is disabled
+	Idle,				// scanner is registered but not active
+
+	EnablingAlign,		// running align_on.g
+	DisablingAlign,		// running align_off.g
+
+	ScanningPre,		// running scan_pre.g
+	Scanning,			// 3D scanner is scanning
+	ScanningPost,		// running scan_post.g
+
+	PostProcessing,		// post-processor is busy
+
+	CalibratingPre,		// running calibrate_pre.g
+	Calibrating,		// 3D scanner is calibrating
+	CalibratingPost,	// running calibrate_post.g
+
+	Uploading			// uploading a binary file
 };
 
 class Scanner
@@ -34,14 +47,17 @@ public:
 	void Spin();
 
 	bool IsEnabled() const { return enabled; }			// Is the usage of a 3D scanner enabled?
-	void Enable();										// Enable 3D scanner extension
+	bool Enable();										// Enable 3D scanner extension. Returns true when done
 
 	bool IsRegistered() const;							// Is the 3D scanner registered and ready to use?
-	void Register();									// Register a 3D scanner
+	bool Register();									// Register a 3D scanner. Returns true when done
 	// External scanners are automatically unregistered when the main port (USB) is closed
 
-	void StartScan(const char *filename);				// Start a new 3D scan
-	void CancelScan();									// Cancel the 3D scan if it is in progress
+	bool StartScan(const char *filename, int param);	// Start a new 3D scan. Returns true when the scan has been initiated
+	bool Cancel();										// Cancel current 3D scanner action. Returns true when done
+	bool Calibrate();									// Calibrate the 3D scanner. Returns true when done
+	bool SetAlignment(bool on);							// Send ALIGN ON/OFF to the 3D sanner. Returns true when done
+	bool Shutdown();									// Send SHUTDOWN to the scanner and unregisters it
 
 	bool DoingGCodes() const { return doingGCodes; }	// Has the scanner run any G-codes since the last state transition?
 	const char GetStatusCharacter() const;				// Returns the status char for the status response
@@ -54,23 +70,29 @@ private:
 	void SetState(const ScannerState s);
 	void ProcessCommand();
 
+	bool IsDoingFileMacro() const;
+	void DoFileMacro(const char *filename);
+
 	Platform *platform;
 	float longWait;
 
 	bool enabled;
+
 	bool doingGCodes;
+	float progress;
 	ScannerState state;
 
 	char buffer[ScanBufferSize];
 	size_t bufferPointer;
 
-	float scanProgress;
+	char scanFilename[FILENAME_LENGTH];
+	int scanParam;
 
+	const char *uploadFilename;
 	size_t uploadSize, uploadBytesLeft;
 	FileStore *fileBeingUploaded;
 };
 
-inline const char Scanner::GetStatusCharacter() const { return static_cast<char>(state); }
 inline bool Scanner::IsRegistered() const { return (state != ScannerState::Disconnected); }
 inline void Scanner::SetGCodeBuffer(GCodeBuffer *gb) { serialGCode = gb; }
 
